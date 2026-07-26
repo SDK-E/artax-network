@@ -133,19 +133,75 @@ cp .env.example .env
 
 ## Development
 
+### Quick Reference
+
 ```bash
 make install      # install package in editable mode with dev deps
 make dev          # install + pre-commit hooks
-make test         # run test suite
-make test-cov     # run tests with HTML coverage report
-make lint         # ruff linter
-make format       # ruff formatter
-make typecheck    # mypy strict type checking
-make check        # lint + typecheck + test
-make clean        # remove build artifacts
+make check        # lint + typecheck + test (full quality gate)
+make help         # show all available commands
 ```
 
-See [docs/development.md](docs/development.md) for the full development guide.
+### All Commands
+
+| Group | Command | Description |
+|-------|---------|-------------|
+| **Setup** | `make install` | Install package in editable mode with dev deps |
+| | `make install-all` | Install with all optional deps (chromium, dashboard) |
+| | `make dev` | Full dev setup (install + hooks) |
+| | `make hooks` | Install git pre-commit + pre-push hooks |
+| | `make hooks-update` | Update pre-commit hooks to latest versions |
+| **Quality** | `make lint` | Run ruff linter (check only) |
+| | `make format` | Format code with ruff (format + lint fix) |
+| | `make typecheck` | Run mypy type checker on artax/ |
+| | `make fix` | Auto-fix lint + format + typecheck |
+| | `make check` | Run all checks (lint + typecheck + test) |
+| **Testing** | `make test` | Run full test suite |
+| | `make test-cov` | Run tests with HTML coverage report |
+| | `make test-fast` | Run tests, stop on first failure |
+| | `make test-verbose` | Run tests with verbose output |
+| **Dashboard** | `make dashboard` | Start dashboard dev server |
+| | `make dashboard-install` | Install dashboard npm deps |
+| | `make dashboard-build` | Build dashboard for production |
+| **Docker** | `make docker-up` | Start services in background |
+| | `make docker-down` | Stop and remove services |
+| | `make docker-build` | Build docker images |
+| | `make docker-logs` | Tail service logs |
+| **Cleanup** | `make clean` | Remove build artifacts and caches |
+| | `make clean-all` | Remove everything including venv |
+
+### Pre-commit Hooks
+
+Hooks run automatically on every `git commit`:
+
+- **ruff** — lint + format
+- **mypy** — type check (artax/ only)
+- **yaml/toml/json** — validate config files
+- **trailing-whitespace** — fix whitespace
+- **end-of-file-fixer** — ensure newline at EOF
+- **debug-statements** — catch leftover `breakpoint()`
+- **check-merge-conflict** — detect conflict markers
+- **check-added-large-files** — block files >500KB
+
+A pre-push hook runs the full test suite before pushing.
+
+To install hooks after cloning:
+
+```bash
+make hooks
+```
+
+### Native Commands
+
+These commands work directly without Make:
+
+```bash
+ruff check artax/ tests/
+ruff format artax/ tests/
+mypy artax/
+pytest
+pre-commit run --all-files
+```
 
 ## Contributing
 

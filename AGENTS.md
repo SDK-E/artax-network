@@ -188,6 +188,39 @@ If something cannot easily be tested, explain why.
 
 ---
 
+# Quality Gates
+
+Before committing, all checks must pass:
+
+```bash
+make check        # runs: lint + typecheck + test
+```
+
+Or individually:
+
+```bash
+make lint         # ruff check
+make format       # ruff format + fix
+make typecheck    # mypy --strict
+make test         # pytest
+```
+
+Pre-commit hooks run automatically on `git commit`:
+
+- ruff (lint + format)
+- mypy (type check)
+- yaml/toml/json validation
+- trailing whitespace, end-of-file
+- debug statement detection
+
+Pre-push hook runs the full test suite.
+
+Use `make` targets, not raw commands. This keeps behaviour consistent across platforms.
+
+Run `make help` to see all available commands.
+
+---
+
 # Decision Order
 
 When making decisions, follow this order:
