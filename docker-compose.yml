@@ -1,0 +1,23 @@
+services: {}
+# Future services will be added here:
+#
+# redis:
+#   image: redis:7-alpine
+#   ports:
+#     - "6379:6379"
+#
+# dashboard:
+#   build: ./dashboard
+#   ports:
+#     - "3000:3000"
+#   depends_on:
+#     - redis
+#
+# chromium:
+#   image: browserless/chrome
+#   ports:
+#     - "3001:3000"
+
+networks:
+  artax-dev:
+    driver: bridge

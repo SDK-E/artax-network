@@ -1,0 +1,1 @@
+"""Artax developer dashboard."""

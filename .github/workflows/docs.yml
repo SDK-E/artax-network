@@ -1,0 +1,29 @@
+name: Docs
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "docs/**"
+      - "*.md"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "*.md"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check markdown links
+        run: |
+          pip install linkchecker
+          find . -name "*.md" -not -path "./node_modules/*" -not -path "./.git/*" | while read f; do
+            linkchecker --check-extern "$f" 2>&1 || true
+          done
+      - name: Check for TODO/FIXME placeholders
+        run: |
+          if grep -rn "TODO\|FIXME" --include="*.md" docs/ ./*.md 2>/dev/null; then
+            echo "::warning::Found TODO/FIXME placeholders in documentation"
+          fi
