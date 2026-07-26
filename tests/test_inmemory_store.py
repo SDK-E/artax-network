@@ -195,9 +195,7 @@ class TestQuery:
         await store.start()
         await store.store("k1", "hello")
         await store.store("k2", "world")
-        result = await store.query(
-            MemoryFilter(predicate=lambda e: e.value.startswith("h"))
-        )
+        result = await store.query(MemoryFilter(predicate=lambda e: e.value.startswith("h")))
         assert result == {"k1": "hello"}
 
     async def test_query_async_predicate(self) -> None:
@@ -236,9 +234,7 @@ class TestQuery:
         await store.store("dom.title", "Page", namespace="chromium")
         await store.store("dom.url", "http://x", namespace="chromium")
         await store.store("sched.intent", "nav", namespace="scheduler")
-        result = await store.query(
-            MemoryFilter(namespace="chromium", key_prefix="dom.")
-        )
+        result = await store.query(MemoryFilter(namespace="chromium", key_prefix="dom."))
         assert len(result) == 2
         assert "dom.title" in result
         assert "dom.url" in result
@@ -409,9 +405,7 @@ class TestEvents:
         async def handler(event: object) -> None:
             received.append(event)
 
-        await bus.subscribe(
-            EventFilter(type=EventType.MEMORY_UPDATED), handler
-        )
+        await bus.subscribe(EventFilter(type=EventType.MEMORY_UPDATED), handler)
 
         store = InMemoryStore(event_bus=bus)
         await store.start()
@@ -432,9 +426,7 @@ class TestEvents:
         async def handler(event: object) -> None:
             received.append(event)
 
-        await bus.subscribe(
-            EventFilter(type=EventType.MEMORY_UPDATED), handler
-        )
+        await bus.subscribe(EventFilter(type=EventType.MEMORY_UPDATED), handler)
 
         config = MemoryConfig(max_entries=2)
         store = InMemoryStore(config=config, event_bus=bus)
@@ -446,7 +438,9 @@ class TestEvents:
         await bus.drain()
 
         eviction_events = [
-            e for e in received if e.payload.get("event") == "memory_evicted"  # type: ignore[union-attr]
+            e
+            for e in received
+            if e.payload.get("event") == "memory_evicted"  # type: ignore[union-attr]
         ]
         assert len(eviction_events) == 1
         await bus.stop()
@@ -459,9 +453,7 @@ class TestEvents:
         async def handler(event: object) -> None:
             received.append(event)
 
-        await bus.subscribe(
-            EventFilter(type=EventType.MEMORY_UPDATED), handler
-        )
+        await bus.subscribe(EventFilter(type=EventType.MEMORY_UPDATED), handler)
 
         store = InMemoryStore(event_bus=bus)
         await store.start()

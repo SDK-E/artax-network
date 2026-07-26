@@ -355,9 +355,7 @@ class InMemoryStore:
         count = 0
 
         namespaces = (
-            [filter.namespace]
-            if filter.namespace is not None
-            else list(self._storage.keys())
+            [filter.namespace] if filter.namespace is not None else list(self._storage.keys())
         )
 
         for ns_name in namespaces:
@@ -378,22 +376,15 @@ class InMemoryStore:
         return result
 
     @staticmethod
-    async def _matches_filter(
-        entry: MemoryEntry, filter: MemoryFilter
-    ) -> bool:
+    async def _matches_filter(entry: MemoryEntry, filter: MemoryFilter) -> bool:
         """Check if an entry passes all filter criteria."""
         if entry.ttl is not None and time.monotonic() > entry.ttl:
             return False
         if filter.namespace is not None and entry.namespace != filter.namespace:
             return False
-        if filter.key_prefix is not None and not entry.key.startswith(
-            filter.key_prefix
-        ):
+        if filter.key_prefix is not None and not entry.key.startswith(filter.key_prefix):
             return False
-        if (
-            filter.value_type is not None
-            and not isinstance(entry.value, filter.value_type)
-        ):
+        if filter.value_type is not None and not isinstance(entry.value, filter.value_type):
             return False
         if filter.after is not None and entry.created_at <= filter.after:
             return False
