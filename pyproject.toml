@@ -45,6 +45,9 @@ dashboard = []
 [project.scripts]
 artax = "artax.runtime:cli"
 
+[tool.setuptools.packages.find]
+include = ["artax*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
