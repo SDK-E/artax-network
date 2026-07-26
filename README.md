@@ -1,10 +1,9 @@
 # Artax Network
 
 <!-- badges-start -->
-[![CI](https://github.com/artax-network/artax-network/actions/workflows/ci.yml/badge.svg)](https://github.com/artax-network/artax-network/actions)
+[![CI](https://github.com/sdk-e/artax-network/actions/workflows/ci.yml/badge.svg)](https://github.com/sdk-e/artax-network/actions)
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Discord](https://img.shields.io/discord/PLACEHOLDER?label=discord)](https://discord.gg/PLACEHOLDER)
 <!-- badges-end -->
 
 **Event-driven runtime for embodied AI.**
@@ -37,14 +36,14 @@ Artax Network **is**:
 
 ## Key Concepts
 
-| Concept | Description |
-|---|---|
-| **Runtime** | The core engine that owns the event bus, memory, and scheduler. Components communicate exclusively through events. |
-| **Events** | Typed data objects representing everything that happens — observations, actions, state changes, errors. The only communication channel. |
-| **Working Memory** | Bounded, attention-scoped store of events the agent is reasoning over right now. Swappable backends (in-memory, SQLite, Redis). |
-| **Scheduler** | Determines when the agent processes events, acts, or waits. Supports priorities, pausing, and tick-based processing. |
-| **Drivers** | Bridge the runtime to external environments. Drivers emit events when they observe the environment and accept actions to execute. v0.1 ships with a Chromium driver. |
-| **Actions** | Concrete operations sent to drivers. Actions are the output of agent reasoning, not responses to function calls. |
+| Concept            | Description                                                                                                                                                          |
+|--------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Runtime**        | The core engine that owns the event bus, memory, and scheduler. Components communicate exclusively through events.                                                   |
+| **Events**         | Typed data objects representing everything that happens — observations, actions, state changes, errors. The only communication channel.                              |
+| **Working Memory** | Bounded, attention-scoped store of events the agent is reasoning over right now. Swappable backends (in-memory, SQLite, Redis).                                      |
+| **Scheduler**      | Determines when the agent processes events, acts, or waits. Supports priorities, pausing, and tick-based processing.                                                 |
+| **Drivers**        | Bridge the runtime to external environments. Drivers emit events when they observe the environment and accept actions to execute. v0.1 ships with a Chromium driver. |
+| **Actions**        | Concrete operations sent to drivers. Actions are the output of agent reasoning, not responses to function calls.                                                     |
 
 ## Quick Start
 
@@ -118,19 +117,19 @@ Copy `.env.example` to `.env` and adjust as needed:
 cp .env.example .env
 ```
 
-| Variable | Default | Description |
-|---|---|---|
-| `ARTAX_LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warning`, `error`) |
-| `ARTAX_RUNTIME_HOST` | `0.0.0.0` | Runtime bind address |
-| `ARTAX_RUNTIME_PORT` | `8080` | Runtime HTTP port |
-| `ARTAX_DASHBOARD_PORT` | `3000` | Dashboard dev server port |
-| `ARTAX_WS_PORT` | `8081` | WebSocket port for dashboard |
-| `ARTAX_MEMORY_BACKEND` | `memory` | Memory backend (`memory`, `sqlite`, `redis`) |
-| `ARTAX_SCHEDULER_BACKEND` | `memory` | Scheduler backend |
-| `ARTAX_CHROMIUM_PATH` | `/usr/bin/chromium` | Chromium binary path |
-| `ARTAX_CHROMIUM_HEADLESS` | `true` | Run Chromium headless |
-| `ARTAX_EVENT_LOG_DIR` | `./logs/events` | Event log directory |
-| `ARTAX_SECRET_KEY` | `change-me-in-production` | Secret key for production |
+| Variable                  | Default                   | Description                                         |
+|---------------------------|---------------------------|-----------------------------------------------------|
+| `ARTAX_LOG_LEVEL`         | `info`                    | Logging level (`debug`, `info`, `warning`, `error`) |
+| `ARTAX_RUNTIME_HOST`      | `0.0.0.0`                 | Runtime bind address                                |
+| `ARTAX_RUNTIME_PORT`      | `8080`                    | Runtime HTTP port                                   |
+| `ARTAX_DASHBOARD_PORT`    | `3000`                    | Dashboard dev server port                           |
+| `ARTAX_WS_PORT`           | `8081`                    | WebSocket port for dashboard                        |
+| `ARTAX_MEMORY_BACKEND`    | `memory`                  | Memory backend (`memory`, `sqlite`, `redis`)        |
+| `ARTAX_SCHEDULER_BACKEND` | `memory`                  | Scheduler backend                                   |
+| `ARTAX_CHROMIUM_PATH`     | `/usr/bin/chromium`       | Chromium binary path                                |
+| `ARTAX_CHROMIUM_HEADLESS` | `true`                    | Run Chromium headless                               |
+| `ARTAX_EVENT_LOG_DIR`     | `./logs/events`           | Event log directory                                 |
+| `ARTAX_SECRET_KEY`        | `change-me-in-production` | Secret key for production                           |
 
 ## Development
 
@@ -154,7 +153,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before submit
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT Licence. See [LICENCE](LICENSE) for details.
 
 ## Roadmap
 
