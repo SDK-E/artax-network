@@ -136,19 +136,21 @@ cp .env.example .env
 ### Quick Reference
 
 ```bash
-make install      # install package in editable mode with dev deps
-make dev          # install + pre-commit hooks
-make check        # lint + typecheck + test (full quality gate)
-make help         # show all available commands
+make venv          # create virtual environment
+make install       # install package in editable mode with dev deps
+make dev           # venv + install + pre-commit hooks
+make check         # lint + typecheck + test (full quality gate)
+make help          # show all available commands
 ```
 
 ### All Commands
 
 | Group | Command | Description |
 |-------|---------|-------------|
-| **Setup** | `make install` | Install package in editable mode with dev deps |
+| **Setup** | `make venv` | Create virtual environment in .venv/ |
+| | `make install` | Install package in editable mode with dev deps |
 | | `make install-all` | Install with all optional deps (chromium, dashboard) |
-| | `make dev` | Full dev setup (install + hooks) |
+| | `make dev` | Full dev setup (venv + install + hooks) |
 | | `make hooks` | Install git pre-commit + pre-push hooks |
 | | `make hooks-update` | Update pre-commit hooks to latest versions |
 | **Quality** | `make lint` | Run ruff linter (check only) |

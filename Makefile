@@ -8,28 +8,45 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
+# Resolve venv Python/pip relative to project root.
+# Works on any platform where make + bash are available.
+VENV     := .venv
+VENV_PY  := $(VENV)/bin/python
+VENV_PIP := $(VENV)/bin/pip
+VENV_BIN := $(VENV)/bin
+
 # -----------------------------------------------------------------------------
 # Setup
 # -----------------------------------------------------------------------------
 
-.PHONY: install install-all dev hooks hooks-update
+.PHONY: venv install install-all dev hooks hooks-update
 
-install: ## Install package in editable mode with dev deps
-	pip install -e ".[dev]"
+venv: ## Create virtual environment in .venv/
+	@if [ ! -d "$(VENV)" ]; then \
+		echo "Creating virtual environment..."; \
+		python3 -m venv "$(VENV)"; \
+		"$(VENV_PIP)" install --upgrade pip setuptools; \
+		echo "Virtual environment ready at $(VENV)/"; \
+	else \
+		echo "Virtual environment already exists at $(VENV)/"; \
+	fi
 
-install-all: ## Install with all optional deps (chromium, dashboard)
-	pip install -e ".[dev,chromium,dashboard]"
+install: venv ## Install package in editable mode with dev deps
+	"$(VENV_PIP)" install -e ".[dev]"
 
-dev: install hooks ## Full dev setup (install + hooks)
-	@echo "Ready"
+install-all: venv ## Install with all optional deps (chromium, dashboard)
+	"$(VENV_PIP)" install -e ".[dev,chromium,dashboard]"
+
+dev: install hooks ## Full dev setup (venv + install + hooks)
+	@echo "Ready — activate with: source $(VENV)/bin/activate"
 
 hooks: ## Install git pre-commit + pre-push hooks
-	pre-commit install
-	pre-commit install --hook-type pre-push
+	"$(VENV_BIN)/pre-commit" install
+	"$(VENV_BIN)/pre-commit" install --hook-type pre-push
 	@echo "Git hooks installed (pre-commit + pre-push)"
 
 hooks-update: ## Update pre-commit hooks to latest versions
-	pre-commit autoupdate
+	"$(VENV_BIN)/pre-commit" autoupdate
 	@echo "Hooks updated"
 
 # -----------------------------------------------------------------------------
@@ -39,14 +56,14 @@ hooks-update: ## Update pre-commit hooks to latest versions
 .PHONY: lint format typecheck check fix
 
 lint: ## Run ruff linter (check only)
-	ruff check artax/ tests/
+	"$(VENV_BIN)/ruff" check artax/ tests/
 
 format: ## Format code with ruff (format + lint fix)
-	ruff format artax/ tests/
-	ruff check --fix artax/ tests/
+	"$(VENV_BIN)/ruff" format artax/ tests/
+	"$(VENV_BIN)/ruff" check --fix artax/ tests/
 
 typecheck: ## Run mypy type checker on artax/
-	mypy artax/
+	"$(VENV_BIN)/mypy" artax/
 
 fix: format typecheck ## Auto-fix lint + format + typecheck
 
@@ -59,10 +76,10 @@ check: lint typecheck test ## Run all checks (lint + typecheck + test)
 .PHONY: test test-cov test-fast test-verbose
 
 test: ## Run full test suite
-	pytest
+	"$(VENV_BIN)/pytest"
 
 test-cov: ## Run tests with HTML coverage report
-	pytest --cov-report=html
+	"$(VENV_BIN)/pytest" --cov-report=html
 	@if command -v open >/dev/null 2>&1; then \
 		open htmlcov/index.html; \
 	elif command -v xdg-open >/dev/null 2>&1; then \
@@ -70,10 +87,10 @@ test-cov: ## Run tests with HTML coverage report
 	fi
 
 test-fast: ## Run tests, stop on first failure
-	pytest -x -q --tb=short --no-header
+	"$(VENV_BIN)/pytest" -x -q --tb=short --no-header
 
 test-verbose: ## Run tests with verbose output
-	pytest -v --tb=long
+	"$(VENV_BIN)/pytest" -v --tb=long
 
 # -----------------------------------------------------------------------------
 # Dashboard
@@ -115,12 +132,12 @@ docker-logs: ## Tail service logs
 .PHONY: clean clean-all
 
 clean: ## Remove build artifacts and caches
-	python -c "import shutil,glob; [shutil.rmtree(d,True) for d in glob.glob('__pycache__',recursive=True)]+glob.glob('.pytest_cache')+glob.glob('.mypy_cache')+glob.glob('.ruff_cache')+['dist','build']+glob.glob('*.egg-info')+['htmlcov','.coverage','coverage.xml']"
+	"$(VENV_PY)" -c "import shutil,glob; [shutil.rmtree(d,True) for d in glob.glob('__pycache__',recursive=True)]+glob.glob('.pytest_cache')+glob.glob('.mypy_cache')+glob.glob('.ruff_cache')+['dist','build']+glob.glob('*.egg-info')+['htmlcov','.coverage','coverage.xml']"
 	@cd dashboard 2>/dev/null && rm -rf node_modules .next out 2>/dev/null || true
 	@true
 
 clean-all: clean ## Remove everything including venv
-	rm -rf .venv
+	rm -rf "$(VENV)"
 
 # -----------------------------------------------------------------------------
 # Help

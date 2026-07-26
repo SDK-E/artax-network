@@ -217,6 +217,8 @@ Pre-push hook runs the full test suite.
 
 Use `make` targets, not raw commands. This keeps behaviour consistent across platforms.
 
+All tools run from `.venv/bin/` — never rely on system Python.
+
 Run `make help` to see all available commands.
 
 ---
