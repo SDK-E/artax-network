@@ -214,8 +214,10 @@ class TestQuery:
         store = InMemoryStore()
         await store.start()
         await store.store("old", "v1")
-        ts = time.monotonic()
-        await asyncio.sleep(0.01)
+        # Use the entry's own updated_at to avoid monotonic clock resolution issues
+        old_entry = store._storage["default"]["old"]
+        ts = old_entry.updated_at
+        await asyncio.sleep(0.1)
         await store.store("new", "v2")
         result = await store.query(MemoryFilter(after=ts))
         assert result == {"new": "v2"}
