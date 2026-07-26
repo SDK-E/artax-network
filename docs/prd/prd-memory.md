@@ -80,12 +80,12 @@ The working memory is not a database. It is the agent's short-term context — t
 ```python
 @dataclass
 class MemoryEntry:
-    key: str                    # "chromium.dom.title"
-    value: Any                  # JSON-serializable
-    created_at: float           # epoch timestamp
-    updated_at: float           # epoch timestamp
-    ttl: float | None           # seconds, None = no expiry
-    namespace: str              # "chromium", "scheduler", "runtime"
+    key: str  # "chromium.dom.title"
+    value: Any  # JSON-serializable
+    created_at: float  # epoch timestamp
+    updated_at: float  # epoch timestamp
+    ttl: float | None  # seconds, None = no expiry
+    namespace: str  # "chromium", "scheduler", "runtime"
 ```
 
 ### Event-Driven Updates
@@ -117,15 +117,15 @@ When memory reaches capacity (`max_entries`):
             "value": "Example Page",
             "created_at": 1700000000.0,
             "ttl": null,
-            "namespace": "chromium"
+            "namespace": "chromium",
         },
         "scheduler.active_intent": {
             "value": {"goal": "submit_form", "progress": 0.5},
             "created_at": 1700000001.0,
             "ttl": 300.0,
-            "namespace": "scheduler"
-        }
-    }
+            "namespace": "scheduler",
+        },
+    },
 }
 ```
 

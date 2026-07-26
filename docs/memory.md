@@ -69,14 +69,16 @@ Any class that implements these methods satisfies the memory interface. The runt
 Add an event to working memory. If memory is at capacity, the eviction policy removes the least-relevant event to make room.
 
 ```python
-await memory.store(SemanticEvent(
-    topic="chromium.dom.click",
-    data={"selector": "button#submit"},
-    source="chromium",
-    timestamp=time.time(),
-    event_id=str(uuid4()),
-    priority=5,
-))
+await memory.store(
+    SemanticEvent(
+        topic="chromium.dom.click",
+        data={"selector": "button#submit"},
+        source="chromium",
+        timestamp=time.time(),
+        event_id=str(uuid4()),
+        priority=5,
+    )
+)
 ```
 
 **Eviction policy:** When capacity is reached, the event with the lowest priority is evicted first. If priorities are equal, the oldest event is evicted. This ensures high-priority events persist longer.
@@ -242,10 +244,10 @@ Snapshots capture the complete state of working memory at a point in time.
 ```python
 @dataclass(frozen=True)
 class MemorySnapshot:
-    events: list[SemanticEvent]    # all events in memory
-    capacity: int                  # maximum capacity
-    timestamp: float               # when the snapshot was taken
-    metadata: dict[str, Any]       # additional context
+    events: list[SemanticEvent]  # all events in memory
+    capacity: int  # maximum capacity
+    timestamp: float  # when the snapshot was taken
+    metadata: dict[str, Any]  # additional context
 ```
 
 ### Use Cases

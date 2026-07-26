@@ -33,12 +33,12 @@ The primary event type. A `SemanticEvent` carries structured, parsed meaning ext
 ```python
 @dataclass(frozen=True)
 class SemanticEvent:
-    topic: str           # e.g., "chromium.dom.click"
-    data: dict[str, Any] # structured payload
-    source: str          # driver ID that emitted this event
-    timestamp: float     # time.time() when created
-    event_id: str        # unique identifier
-    priority: int        # 0 = lowest, 9 = highest
+    topic: str  # e.g., "chromium.dom.click"
+    data: dict[str, Any]  # structured payload
+    source: str  # driver ID that emitted this event
+    timestamp: float  # time.time() when created
+    event_id: str  # unique identifier
+    priority: int  # 0 = lowest, 9 = highest
 ```
 
 **When to use:** Every observation from a driver that has been parsed into structured meaning. A button click. A terminal output line. A sensor reading with units. This is the event type the agent reasons over.
@@ -50,8 +50,8 @@ An event representing an action the runtime wants a driver to execute.
 ```python
 @dataclass(frozen=True)
 class ActionEvent:
-    target: str          # driver ID to execute this action
-    action_type: str     # e.g., "click", "type", "navigate"
+    target: str  # driver ID to execute this action
+    action_type: str  # e.g., "click", "type", "navigate"
     parameters: dict[str, Any]  # action-specific data
     timestamp: float
     event_id: str
@@ -67,7 +67,7 @@ Internal runtime events — lifecycle signals, errors, status changes.
 ```python
 @dataclass(frozen=True)
 class SystemEvent:
-    event_type: str      # "driver.connected", "driver.error", "runtime.tick"
+    event_type: str  # "driver.connected", "driver.error", "runtime.tick"
     data: dict[str, Any]
     timestamp: float
     event_id: str
@@ -82,8 +82,8 @@ Periodic signals indicating subsystem health.
 ```python
 @dataclass(frozen=True)
 class HeartbeatEvent:
-    source: str          # subsystem identifier
-    status: str          # "healthy", "degraded", "unhealthy"
+    source: str  # subsystem identifier
+    status: str  # "healthy", "degraded", "unhealthy"
     timestamp: float
     metadata: dict[str, Any]
 ```
@@ -172,14 +172,16 @@ The working memory subscribes to specific event types based on the agent's curre
 The primary pattern. A producer publishes an event. Zero or more consumers receive it asynchronously.
 
 ```python
-await bus.publish(SemanticEvent(
-    topic="chromium.dom.click",
-    data={"selector": "button#submit"},
-    source="chromium",
-    timestamp=time.time(),
-    event_id=str(uuid4()),
-    priority=5,
-))
+await bus.publish(
+    SemanticEvent(
+        topic="chromium.dom.click",
+        data={"selector": "button#submit"},
+        source="chromium",
+        timestamp=time.time(),
+        event_id=str(uuid4()),
+        priority=5,
+    )
+)
 ```
 
 ### Request-Response (via Events)
@@ -234,12 +236,14 @@ class ChromiumDriver:
 The runtime publishes system events:
 
 ```python
-await bus.publish(SystemEvent(
-    event_type="runtime.tick",
-    data={"tick_number": self._tick_count},
-    timestamp=time.time(),
-    event_id=str(uuid4()),
-))
+await bus.publish(
+    SystemEvent(
+        event_type="runtime.tick",
+        data={"tick_number": self._tick_count},
+        timestamp=time.time(),
+        event_id=str(uuid4()),
+    )
+)
 ```
 
 ### From the Agent
@@ -268,6 +272,7 @@ Most handlers are async functions:
 async def handle_click(event: SemanticEvent) -> None:
     print(f"Button clicked: {event.data['selector']}")
 
+
 bus.subscribe("chromium.dom.click", handle_click)
 ```
 
@@ -280,6 +285,7 @@ async def handle_submit(event: SemanticEvent) -> None:
     if event.data.get("selector") == "button#submit":
         # process submit click
         pass
+
 
 bus.subscribe("chromium.dom.click", handle_submit)
 ```

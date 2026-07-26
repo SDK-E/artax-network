@@ -66,24 +66,26 @@ Expert in writing and maintaining technical documentation. Documentation is part
 # GOOD: Documented public interface
 class WorkingMemory(Protocol):
     """Working memory protocol for semantic state storage.
-    
+
     This protocol defines the interface for memory backends.
     The runtime interacts with memory exclusively through this
     interface, allowing backend swaps without code changes.
-    
+
     Attributes:
         store: Store a value under a key.
         retrieve: Retrieve a value by key.
         query: Query entries matching filter criteria.
     """
+
     async def store(self, key: str, value: Any) -> None:
         """Store a value under the given key.
-        
+
         Args:
             key: The storage key.
             value: The value to store.
         """
         ...
+
 
 # BAD: Undocumented interface
 class WorkingMemory:

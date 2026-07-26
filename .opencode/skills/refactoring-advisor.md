@@ -67,10 +67,12 @@ class Runtime:
     def __init__(self):
         self._chromium = ChromiumDriver()  # Coupling
 
+
 # AFTER: Decoupled via protocol
 class Runtime:
     def __init__(self):
         self._drivers: list[Driver] = []  # Protocol-based
+
 
 # Refactoring plan:
 # 1. Extract Driver protocol (already exists)

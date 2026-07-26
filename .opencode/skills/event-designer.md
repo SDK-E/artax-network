@@ -67,11 +67,7 @@ Expert in designing typed events for the Artax event bus. Events are the univers
 SemanticEvent.create(
     type=EventType.OBSERVATION,
     source="chromium",
-    payload={
-        "element": "button.submit",
-        "label": "Submit Form",
-        "visible": True
-    }
+    payload={"element": "button.submit", "label": "Submit Form", "visible": True},
 )
 
 # BAD: Raw DOM data
@@ -80,8 +76,8 @@ SemanticEvent.create(
     source="chromium",
     payload={
         "html": "<button class='submit'>Submit Form</button>",
-        "xpath": "/html/body/div/form/button"
-    }
+        "xpath": "/html/body/div/form/button",
+    },
 )
 ```
 

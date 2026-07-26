@@ -4,9 +4,9 @@ Working memory provides transient, queryable key-value storage for runtime
 state. Multiple backends are supported: in-process dicts, SQLite for
 persistence, and Redis for distributed coordination.
 """
+
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
@@ -21,6 +21,7 @@ class MemoryFilter:
         after: If set, only entries created after this datetime are returned.
         before: If set, only entries created before this datetime are returned.
         limit: Maximum number of entries to return. Zero means no limit.
+
     """
 
     def __init__(
@@ -39,6 +40,7 @@ class MemoryFilter:
             after: Lower bound timestamp filter.
             before: Upper bound timestamp filter.
             limit: Maximum results to return.
+
         """
         self.prefix = prefix
         self.event_type = event_type
@@ -57,6 +59,7 @@ class MemoryEntry:
         event_type: The event type that produced this entry, if any.
         timestamp: UTC timestamp of when this entry was stored.
         metadata: Additional annotations on this entry.
+
     """
 
     key: str
@@ -76,6 +79,7 @@ class MemorySnapshot:
         entries: All memory entries at snapshot time.
         created_at: UTC timestamp of snapshot creation.
         version: Monotonically increasing version counter.
+
     """
 
     entries: list[MemoryEntry]
@@ -98,6 +102,7 @@ class WorkingMemory(Protocol):
         Args:
             key: The storage key.
             value: The value to store.
+
         """
         ...
 
@@ -109,6 +114,7 @@ class WorkingMemory(Protocol):
 
         Returns:
             The stored value, or None if the key does not exist.
+
         """
         ...
 
@@ -120,6 +126,7 @@ class WorkingMemory(Protocol):
 
         Returns:
             A list of matching MemoryEntry instances, ordered by timestamp.
+
         """
         ...
 
@@ -135,6 +142,7 @@ class WorkingMemory(Protocol):
 
         Returns:
             A MemorySnapshot containing all current entries.
+
         """
         ...
 
@@ -143,6 +151,7 @@ class WorkingMemory(Protocol):
 
         Args:
             snapshot: The snapshot to restore from.
+
         """
         ...
 
@@ -156,7 +165,6 @@ class InMemoryStore:
 
     def __init__(self) -> None:
         """Initialize an empty in-memory store."""
-        pass
 
     async def store(self, key: str, value: Any) -> None:
         """Store a value under the given key.
@@ -164,8 +172,8 @@ class InMemoryStore:
         Args:
             key: The storage key.
             value: The value to store.
+
         """
-        pass
 
     async def retrieve(self, key: str) -> Any | None:
         """Retrieve a value by key.
@@ -175,8 +183,8 @@ class InMemoryStore:
 
         Returns:
             The stored value or None.
+
         """
-        pass
 
     async def query(self, filter: MemoryFilter) -> list[MemoryEntry]:
         """Query entries matching the filter.
@@ -186,28 +194,31 @@ class InMemoryStore:
 
         Returns:
             Matching entries.
+
         """
-        pass
+        raise NotImplementedError
 
     async def clear(self) -> None:
         """Remove all entries."""
-        pass
+        raise NotImplementedError
 
     async def snapshot(self) -> MemorySnapshot:
         """Capture a snapshot of all entries.
 
         Returns:
             A MemorySnapshot.
+
         """
-        pass
+        raise NotImplementedError
 
     async def restore(self, snapshot: MemorySnapshot) -> None:
         """Restore from a snapshot.
 
         Args:
             snapshot: The snapshot to restore.
+
         """
-        pass
+        raise NotImplementedError
 
 
 class SQLiteMemoryStore:
@@ -223,8 +234,8 @@ class SQLiteMemoryStore:
 
         Args:
             db_path: Filesystem path to the SQLite database file.
+
         """
-        pass
 
     async def store(self, key: str, value: Any) -> None:
         """Store a value under the given key.
@@ -232,8 +243,8 @@ class SQLiteMemoryStore:
         Args:
             key: The storage key.
             value: The value to store.
+
         """
-        pass
 
     async def retrieve(self, key: str) -> Any | None:
         """Retrieve a value by key.
@@ -243,8 +254,8 @@ class SQLiteMemoryStore:
 
         Returns:
             The stored value or None.
+
         """
-        pass
 
     async def query(self, filter: MemoryFilter) -> list[MemoryEntry]:
         """Query entries matching the filter.
@@ -254,28 +265,31 @@ class SQLiteMemoryStore:
 
         Returns:
             Matching entries.
+
         """
-        pass
+        raise NotImplementedError
 
     async def clear(self) -> None:
         """Remove all entries."""
-        pass
+        raise NotImplementedError
 
     async def snapshot(self) -> MemorySnapshot:
         """Capture a snapshot of all entries.
 
         Returns:
             A MemorySnapshot.
+
         """
-        pass
+        raise NotImplementedError
 
     async def restore(self, snapshot: MemorySnapshot) -> None:
         """Restore from a snapshot.
 
         Args:
             snapshot: The snapshot to restore.
+
         """
-        pass
+        raise NotImplementedError
 
 
 class RedisMemoryStore:
@@ -291,8 +305,8 @@ class RedisMemoryStore:
 
         Args:
             url: Redis connection URL (e.g. ``redis://localhost:6379/0``).
+
         """
-        pass
 
     async def store(self, key: str, value: Any) -> None:
         """Store a value under the given key.
@@ -300,8 +314,8 @@ class RedisMemoryStore:
         Args:
             key: The storage key.
             value: The value to store.
+
         """
-        pass
 
     async def retrieve(self, key: str) -> Any | None:
         """Retrieve a value by key.
@@ -311,8 +325,8 @@ class RedisMemoryStore:
 
         Returns:
             The stored value or None.
+
         """
-        pass
 
     async def query(self, filter: MemoryFilter) -> list[MemoryEntry]:
         """Query entries matching the filter.
@@ -322,25 +336,28 @@ class RedisMemoryStore:
 
         Returns:
             Matching entries.
+
         """
-        pass
+        raise NotImplementedError
 
     async def clear(self) -> None:
         """Remove all entries."""
-        pass
+        raise NotImplementedError
 
     async def snapshot(self) -> MemorySnapshot:
         """Capture a snapshot of all entries.
 
         Returns:
             A MemorySnapshot.
+
         """
-        pass
+        raise NotImplementedError
 
     async def restore(self, snapshot: MemorySnapshot) -> None:
         """Restore from a snapshot.
 
         Args:
             snapshot: The snapshot to restore.
+
         """
-        pass
+        raise NotImplementedError

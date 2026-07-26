@@ -1,11 +1,12 @@
 """Artax event system."""
+
 from .bus import EventBus, MemoryEventBus, Subscription
 from .types import (
     Event,
     EventBusConfig,
     EventBusStats,
-    EventType,
     EventFilter,
+    EventType,
     SemanticEvent,
 )
 
@@ -14,8 +15,8 @@ __all__ = [
     "EventBus",
     "EventBusConfig",
     "EventBusStats",
-    "EventType",
     "EventFilter",
+    "EventType",
     "MemoryEventBus",
     "SemanticEvent",
     "Subscription",

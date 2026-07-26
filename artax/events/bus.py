@@ -3,6 +3,7 @@
 The event bus decouples producers from consumers, enabling asynchronous
 publish-subscribe messaging throughout the runtime.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from .types import Event, EventBusConfig, EventBusStats, EventType, EventFilter, SemanticEvent
+from .types import Event, EventBusConfig, EventBusStats, EventFilter, EventType, SemanticEvent
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class Subscription(Protocol):
     Attributes:
         id: Unique identifier for this subscription.
         active: Whether the subscription is currently receiving events.
+
     """
 
     @property
@@ -62,6 +64,7 @@ class EventBus(Protocol):
 
         Returns:
             A Future that resolves when the event has been enqueued.
+
         """
         ...
 
@@ -78,6 +81,7 @@ class EventBus(Protocol):
 
         Returns:
             A subscription ID string for later unsubscription.
+
         """
         ...
 
@@ -86,6 +90,7 @@ class EventBus(Protocol):
 
         Args:
             subscription_id: The subscription ID returned by ``subscribe``.
+
         """
         ...
 
@@ -101,6 +106,7 @@ class EventBus(Protocol):
 
         Returns:
             List of events in chronological order.
+
         """
         ...
 
@@ -134,6 +140,7 @@ class MemoryEventBus:
 
         Args:
             config: Bus configuration. Uses defaults if None.
+
         """
         self._config = config or EventBusConfig()
         self._history: deque[Event] = deque(maxlen=self._config.history_size)
@@ -180,6 +187,7 @@ class MemoryEventBus:
 
         Returns:
             A resolved Future.
+
         """
         loop = asyncio.get_running_loop()
         if self._stopped:
@@ -236,6 +244,7 @@ class MemoryEventBus:
 
         Returns:
             A subscription ID string.
+
         """
         sub_id = uuid.uuid4().hex
         sub = _SubscriptionState(
@@ -254,6 +263,7 @@ class MemoryEventBus:
 
         Args:
             subscription_id: The subscription ID to remove.
+
         """
         async with self._lock:
             sub = self._subscriptions.pop(subscription_id, None)
@@ -278,7 +288,7 @@ class MemoryEventBus:
             self._drain_event.clear()
             try:
                 await asyncio.wait_for(self._drain_event.wait(), timeout=0.05)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     def history(self, limit: int | None = None) -> list[Event]:
@@ -289,6 +299,7 @@ class MemoryEventBus:
 
         Returns:
             List of events in chronological order.
+
         """
         if limit is None:
             return list(self._history)

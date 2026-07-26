@@ -64,17 +64,10 @@ Expert in designing working memory backends and semantic state management. Worki
 
 ```python
 # GOOD: Semantic memory storage
-await memory.store(
-    "page/navigation/url",
-    {"url": "https://example.com", "title": "Example"}
-)
+await memory.store("page/navigation/url", {"url": "https://example.com", "title": "Example"})
 
 # GOOD: Attention-scoped query
-results = await memory.query(MemoryFilter(
-    prefix="page/",
-    event_type="observation",
-    limit=10
-))
+results = await memory.query(MemoryFilter(prefix="page/", event_type="observation", limit=10))
 
 # BAD: Raw HTML storage
 await memory.store("page/html", "<html>...</html>")  # VIOLATION

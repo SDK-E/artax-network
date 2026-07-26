@@ -4,6 +4,7 @@ This module will wrap Playwright to provide browser automation capabilities.
 It observes page state as Artax events and executes actions (click, type,
 navigate, etc.) against the browser.
 """
+
 from __future__ import annotations
 
 from ...actions.types import Action, ActionResult
@@ -20,6 +21,7 @@ class ChromiumDriver:
 
     Attributes:
         config: Configuration for this driver instance.
+
     """
 
     config_class = ChromiumConfig
@@ -29,6 +31,7 @@ class ChromiumDriver:
 
         Args:
             config: Chromium-specific configuration parameters.
+
         """
         self._config = config
         self._connected = False
@@ -53,14 +56,14 @@ class ChromiumDriver:
 
         Future implementation will use Playwright to start a browser context.
         """
-        pass
+        raise NotImplementedError
 
     async def disconnect(self) -> None:
         """Close the browser and release resources.
 
         Future implementation will call Playwright's close method.
         """
-        pass
+        raise NotImplementedError
 
     async def observe(self) -> list[Event]:
         """Capture the current page state as Artax events.
@@ -70,6 +73,7 @@ class ChromiumDriver:
 
         Returns:
             A list of events representing the current browser state.
+
         """
         return []
 
@@ -84,6 +88,7 @@ class ChromiumDriver:
 
         Returns:
             The result of the browser interaction.
+
         """
         return ActionResult(action_id=action.id, success=False)
 
@@ -94,5 +99,6 @@ class ChromiumDriver:
 
         Returns:
             True if the browser is healthy.
+
         """
         return False

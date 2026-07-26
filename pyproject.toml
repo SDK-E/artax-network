@@ -53,11 +53,18 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["all"]
-ignore = ["D100", "D104", "S101", "ANN101", "ANN102", "ERA"]
+select = ["ALL"]
+ignore = [
+    "D100", "D104", "D203", "D213", "S101", "S104", "ERA", "COM812",
+    "ANN101", "ANN102", "ANN401",
+    "CPY001", "TC001", "TC003", "TID252",
+    "SIM105", "SIM102",
+    "A002", "UP042", "PLW0108", "RUF006",
+    "TRY003", "EM101", "ARG002",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "ANN"]
+"tests/**" = ["S101", "ANN", "D101", "D102", "D103", "SLF001", "PLR2004", "PLW0108", "A002", "ARG002"]
 
 [tool.black]
 line-length = 100

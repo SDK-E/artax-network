@@ -65,16 +65,11 @@ Expert in designing scheduler policies and priority management. The Scheduler co
 
 ```python
 # GOOD: Scheduler dispatches events in priority order
-await scheduler.schedule(
-    event=high_priority_event,
-    delay=timedelta(seconds=0)
-)
+await scheduler.schedule(event=high_priority_event, delay=timedelta(seconds=0))
 
 # GOOD: Throttled dispatch for high-frequency events
-await scheduler.schedule(
-    event=dom_change_event,
-    delay=timedelta(milliseconds=100)
-)
+await scheduler.schedule(event=dom_change_event, delay=timedelta(milliseconds=100))
+
 
 # BAD: Scheduler decides what to do
 class BadScheduler:

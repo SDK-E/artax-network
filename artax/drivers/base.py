@@ -5,6 +5,7 @@ translate between raw environment state and Artax events. The runtime never
 imports concrete driver code directly; all interaction is via the Driver
 protocol.
 """
+
 from __future__ import annotations
 
 import enum
@@ -52,6 +53,7 @@ class Driver(Protocol):
 
         Raises:
             ConnectionError: If the environment cannot be reached.
+
         """
         ...
 
@@ -67,6 +69,7 @@ class Driver(Protocol):
 
         Returns:
             A list of Observation events representing the environment state.
+
         """
         ...
 
@@ -78,6 +81,7 @@ class Driver(Protocol):
 
         Returns:
             The result of the action execution.
+
         """
         ...
 
@@ -86,6 +90,7 @@ class Driver(Protocol):
 
         Returns:
             True if the driver is operational, False otherwise.
+
         """
         ...
 

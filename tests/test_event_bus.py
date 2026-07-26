@@ -1,4 +1,5 @@
 """Tests for artax.events.bus module."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,9 +11,8 @@ from artax.events.bus import MemoryEventBus
 from artax.events.types import (
     Event,
     EventBusConfig,
-    EventBusStats,
-    EventType,
     EventFilter,
+    EventType,
     SemanticEvent,
 )
 
@@ -115,9 +115,7 @@ class TestPublishSubscribe:
         await bus.start()
         received: list[Event] = []
 
-        await bus.subscribe(
-            EventFilter(type=EventType.PAGE_LOADED), lambda e: received.append(e)
-        )
+        await bus.subscribe(EventFilter(type=EventType.PAGE_LOADED), lambda e: received.append(e))
 
         await bus.publish(_make_event(type=EventType.DOM_CHANGED))
         await bus.publish(_make_event(type=EventType.PAGE_LOADED))

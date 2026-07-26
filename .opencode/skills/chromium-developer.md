@@ -72,13 +72,10 @@ class ChromiumDriver:
             SemanticEvent.create(
                 type=EventType.OBSERVATION,
                 source=self.name,
-                payload={
-                    "element": "button.submit",
-                    "label": "Submit",
-                    "action": "click"
-                }
+                payload={"element": "button.submit", "label": "Submit", "action": "click"},
             )
         ]
+
 
 # BAD: Runtime imports Playwright
 from playwright.async_api import Page  # VIOLATION in runtime

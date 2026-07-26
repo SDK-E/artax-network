@@ -1,4 +1,5 @@
 """Chromium driver configuration."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -15,6 +16,7 @@ class ChromiumConfig:
         viewport_height: Browser viewport height in pixels.
         user_data_dir: Optional path to a persistent user data directory.
         args: Additional command-line arguments passed to the browser process.
+
     """
 
     headless: bool = True

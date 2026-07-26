@@ -3,6 +3,7 @@
 Provides the canonical event taxonomy, concrete event implementation, and
 filtering primitives used across all subsystems.
 """
+
 from __future__ import annotations
 
 import enum
@@ -115,6 +116,7 @@ class SemanticEvent:
         payload: Arbitrary structured data carried by the event.
         metadata: Non-essential annotations.
         correlation_id: Optional UUID linking related events.
+
     """
 
     event_id: uuid.UUID
@@ -145,6 +147,7 @@ class SemanticEvent:
 
         Returns:
             A new frozen SemanticEvent instance.
+
         """
         return cls(
             event_id=uuid.uuid4(),
@@ -173,6 +176,7 @@ class EventFilter:
             and returns True if the event should be delivered.
         after: If set, only events timestamped after this value are matched.
         limit: Maximum number of matching events to return. None means no limit.
+
     """
 
     type: EventType | None = None
@@ -193,6 +197,7 @@ class EventFilter:
 
         Returns:
             True if the event matches all filter criteria.
+
         """
         if self.type is not None and event.type != self.type:
             return False
@@ -222,6 +227,7 @@ class EventBusConfig:
         history_size: Maximum number of events kept in the ring buffer.
         max_queue_size: Maximum events queued per subscriber before dropping.
         dispatch_timeout: Seconds to wait when dispatching before timing out.
+
     """
 
     history_size: int = 1000
@@ -239,6 +245,7 @@ class EventBusStats:
         subscriptions_active: Number of active subscriptions.
         subscriptions_dropped: Total events dropped due to queue overflow.
         queue_depth: Current total queued events across all subscribers.
+
     """
 
     events_published: int = 0

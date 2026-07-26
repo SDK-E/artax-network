@@ -45,10 +45,12 @@ class Priority(IntEnum):
     MEDIUM = 2
     LOW = 3
 
+
 class ScheduleStatus(Enum):
     PENDING = "pending"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
+
 
 class ScheduleEntry:
     entry_id: str  # UUID hex string
@@ -58,11 +60,13 @@ class ScheduleEntry:
     priority: Priority
     status: ScheduleStatus
 
+
 class SchedulerConfig:
     tick_interval_ms: int = 100
     max_queue_size: int = 10000
     emergency_drain: bool = True  # deliver all on shutdown
     queue_depth_threshold: int = 1000  # emit event when exceeded
+
 
 class SchedulerStatus:
     paused: bool
@@ -76,10 +80,13 @@ class SchedulerStatus:
     total_cancelled: int
     tick_count: int
 
+
 class Scheduler(Protocol):
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
-    async def schedule(self, event: Event, priority: Priority = Priority.MEDIUM, delay: float | None = None) -> str: ...
+    async def schedule(
+        self, event: Event, priority: Priority = Priority.MEDIUM, delay: float | None = None
+    ) -> str: ...
     async def cancel(self, entry_id: str) -> bool: ...
     def pause(self) -> None: ...
     def resume(self) -> None: ...

@@ -66,10 +66,12 @@ Expert in designing, implementing, and evolving the Artax Runtime core subsystem
 # GOOD: Runtime depends only on interfaces
 from artax.core.interfaces import Driver, WorkingMemory, Scheduler
 
+
 class Runtime:
     def __init__(self, config: RuntimeConfig) -> None:
         self._drivers: list[Driver] = []
         self._memory: WorkingMemory | None = None
+
 
 # BAD: Runtime imports concrete driver
 from artax.drivers.chromium import ChromiumDriver  # VIOLATION

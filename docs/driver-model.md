@@ -178,6 +178,7 @@ touch artax/drivers/mydriver/config.py
 # artax/drivers/mydriver/config.py
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class MyDriverConfig:
     host: str = "localhost"
@@ -191,10 +192,12 @@ class MyDriverConfig:
 # artax/drivers/mydriver/events.py
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class MyEnvironmentEvent:
     """An observation from the MyDriver environment."""
-    event_type: str       # e.g., "state_changed", "output_received"
+
+    event_type: str  # e.g., "state_changed", "output_received"
     data: dict
 ```
 
@@ -208,6 +211,7 @@ from uuid import uuid4
 from artax.core.events import SemanticEvent
 from artax.core.protocols import DriverProtocol
 from artax.core.models import ActionResult, DriverHealth
+
 
 class MyDriver:
     def __init__(self, config, bus):
@@ -309,9 +313,7 @@ async def connect(self) -> None:
     try:
         self._process = await asyncio.create_subprocess_exec(...)
     except FileNotFoundError:
-        raise DriverConnectionError(
-            f"Chromium not found at {self._config.path}"
-        )
+        raise DriverConnectionError(f"Chromium not found at {self._config.path}")
 ```
 
 ### Execution Errors
@@ -344,20 +346,24 @@ async def observe(self) -> None:
             observation = await self._environment.read()
             await self._publish_event(observation)
         except ConnectionLost:
-            await self._bus.publish(SystemEvent(
-                event_type="driver.disconnected",
-                data={"driver_id": self.driver_id, "reason": "connection lost"},
-                timestamp=time.time(),
-                event_id=str(uuid4()),
-            ))
+            await self._bus.publish(
+                SystemEvent(
+                    event_type="driver.disconnected",
+                    data={"driver_id": self.driver_id, "reason": "connection lost"},
+                    timestamp=time.time(),
+                    event_id=str(uuid4()),
+                )
+            )
             break
         except Exception as e:
-            await self._bus.publish(SystemEvent(
-                event_type="driver.error",
-                data={"driver_id": self.driver_id, "error": str(e)},
-                timestamp=time.time(),
-                event_id=str(uuid4()),
-            ))
+            await self._bus.publish(
+                SystemEvent(
+                    event_type="driver.error",
+                    data={"driver_id": self.driver_id, "error": str(e)},
+                    timestamp=time.time(),
+                    event_id=str(uuid4()),
+                )
+            )
 ```
 
 ## Health Checks

@@ -3,12 +3,13 @@
 The scheduler manages delayed and prioritized event dispatch, decoupling
 event creation from delivery timing.
 """
+
 from __future__ import annotations
 
 import enum
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from ..events.types import Event
@@ -37,6 +38,7 @@ class ScheduleEntry:
         execute_at: UTC timestamp at which this entry becomes eligible.
         created_at: UTC timestamp of when this entry was scheduled.
         priority: Dispatch priority relative to other pending entries.
+
     """
 
     id: uuid.UUID
@@ -66,6 +68,7 @@ class Scheduler(Protocol):
 
         Returns:
             A task identifier that can be used to cancel the entry.
+
         """
         ...
 
@@ -77,6 +80,7 @@ class Scheduler(Protocol):
 
         Raises:
             KeyError: If no pending entry matches the given task_id.
+
         """
         ...
 
@@ -115,7 +119,6 @@ class MemoryScheduler:
 
     def __init__(self) -> None:
         """Initialize an empty scheduler."""
-        pass
 
     @property
     def pending_count(self) -> int:
@@ -131,6 +134,7 @@ class MemoryScheduler:
 
         Returns:
             A unique task identifier.
+
         """
         return ""
 
@@ -139,17 +143,18 @@ class MemoryScheduler:
 
         Args:
             task_id: The task identifier to cancel.
+
         """
-        pass
+        raise NotImplementedError
 
     async def pause(self) -> None:
         """Pause the scheduler."""
-        pass
+        raise NotImplementedError
 
     async def resume(self) -> None:
         """Resume the scheduler."""
-        pass
+        raise NotImplementedError
 
     async def tick(self) -> None:
         """Dispatch any matured events."""
-        pass
+        raise NotImplementedError

@@ -2,6 +2,7 @@
 
 Provides centralized log setup and logger retrieval for all artax submodules.
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,8 +16,9 @@ def configure_logging(level: str = "info") -> None:
 
     Args:
         level: Log level string (debug, info, warning, error, critical).
+
     """
-    pass
+    raise NotImplementedError
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -30,5 +32,6 @@ def get_logger(name: str) -> logging.Logger:
 
     Returns:
         A configured logging.Logger instance.
+
     """
     return logging.getLogger(f"artax.{name}")

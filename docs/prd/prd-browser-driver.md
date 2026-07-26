@@ -142,7 +142,7 @@ The driver registers a handler for `__artax_dom_changed` that translates the sum
 class ChromiumConfig(DriverConfig):
     driver_type: str = "chromium"
     headless: bool = True
-    cdp_url: str | None = None        # Connect to existing browser via CDP
+    cdp_url: str | None = None  # Connect to existing browser via CDP
     launch_args: list[str] = field(default_factory=lambda: ["--no-sandbox"])
     viewport_width: int = 1280
     viewport_height: int = 720
@@ -150,7 +150,7 @@ class ChromiumConfig(DriverConfig):
     action_timeout_ms: int = 10000
     screenshot_format: str = "png"
     dom_observer_debounce_ms: int = 100
-    initial_url: str | None = None     # Navigate to this URL on connect
+    initial_url: str | None = None  # Navigate to this URL on connect
 ```
 
 ---

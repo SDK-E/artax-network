@@ -105,6 +105,7 @@ pytest tests/e2e/      # end-to-end tests only
 # tests/unit/test_memory.py
 from artax.core.events import SemanticEvent
 
+
 async def test_memory_store():
     memory = InMemoryBackend(capacity=100)
     event = SemanticEvent(topic="test.event", data={"key": "value"})
@@ -288,6 +289,7 @@ Since the runtime is async, use `asyncio`-compatible debugging:
 
 ```python
 import debugpy
+
 debugpy.listen(5678)
 debugpy.wait_for_client()
 ```
@@ -295,7 +297,9 @@ debugpy.wait_for_client()
 Or use `pdb` with `asyncio`:
 
 ```python
-import pdb; pdb.set_trace()  # noqa: E702
+import pdb
+
+pdb.set_trace()  # noqa: E702
 ```
 
 Note: breakpoints in async code may require special handling depending on your editor.

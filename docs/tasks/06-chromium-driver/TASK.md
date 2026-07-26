@@ -83,7 +83,7 @@ class ChromiumDriver(BaseDriver):
     def __init__(self, name: str, config: ChromiumConfig) -> None:
         super().__init__(name, config)
         self._browser = None  # Playwright Browser
-        self._page = None     # Playwright Page
+        self._page = None  # Playwright Page
         self._context = None  # Playwright BrowserContext
 
     async def _do_connect(self) -> None:

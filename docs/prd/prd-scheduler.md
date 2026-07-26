@@ -90,9 +90,9 @@ class ScheduleEntry:
     entry_id: str
     event: SemanticEvent
     priority: Priority
-    scheduled_at: float          # when it was scheduled
-    deliver_at: float            # when it should be delivered
-    status: ScheduleStatus       # pending, delivered, cancelled
+    scheduled_at: float  # when it was scheduled
+    deliver_at: float  # when it should be delivered
+    status: ScheduleStatus  # pending, delivered, cancelled
 ```
 
 ### Tick Algorithm
@@ -172,10 +172,10 @@ class Scheduler:
 
 ```python
 class Priority(int, Enum):
-    URGENT = 0    # Process immediately, before all others
-    HIGH = 1      # Process before medium and low
-    MEDIUM = 2    # Default priority
-    LOW = 3       # Process last
+    URGENT = 0  # Process immediately, before all others
+    HIGH = 1  # Process before medium and low
+    MEDIUM = 2  # Default priority
+    LOW = 3  # Process last
 ```
 
 ### ScheduleStatus

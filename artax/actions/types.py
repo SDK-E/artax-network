@@ -4,6 +4,7 @@ Actions represent commands issued to drivers. Each action has a type, optional
 target, payload, and timeout. Results carry success status, output data, and
 error information.
 """
+
 from __future__ import annotations
 
 import enum
@@ -42,6 +43,7 @@ class Action:
         target: Optional selector or identifier for the action target.
         payload: Arbitrary data required by the action type.
         timeout: Maximum duration to wait for action completion.
+
     """
 
     id: uuid.UUID
@@ -61,6 +63,7 @@ class ActionResult:
         data: Arbitrary output data from the action.
         error: Human-readable error message if the action failed.
         duration: Wall-clock time taken to execute the action.
+
     """
 
     action_id: uuid.UUID
@@ -81,6 +84,7 @@ class Intent:
         description: Natural language description of the intent.
         actions: Ordered list of actions to execute.
         priority: Scheduling priority for the intent.
+
     """
 
     description: str

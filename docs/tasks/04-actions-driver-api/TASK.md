@@ -48,12 +48,14 @@ class Action:
     parameters: dict[str, Any] = field(default_factory=dict)
     timestamp: float  # time.monotonic()
 
+
 class ActionResult:
     action_id: str
     success: bool
     data: Any = None
     error: str | None = None
     duration_ms: float = 0.0
+
 
 class Intent:
     description: str
@@ -73,6 +75,7 @@ class DriverState(Enum):
     UNHEALTHY = "unhealthy"
     ERROR = "error"
 
+
 class DriverHealth:
     state: DriverState
     message: str = ""
@@ -80,9 +83,11 @@ class DriverHealth:
     last_event_at: float | None = None
     error_count: int = 0
 
+
 class DriverConfig(Protocol):
     @property
     def driver_type(self) -> str: ...
+
 
 class Driver(Protocol):
     @property
@@ -97,20 +102,28 @@ class Driver(Protocol):
     async def execute(self, action: Action) -> ActionResult: ...
     async def health_check(self) -> DriverHealth: ...
 
+
 class DriverError(Exception):
     """Base exception for driver errors."""
+
     pass
+
 
 class DriverConnectionError(DriverError):
     """Driver failed to connect."""
+
     pass
+
 
 class DriverTimeoutError(DriverError):
     """Driver operation timed out."""
+
     pass
+
 
 class DriverActionError(DriverError):
     """Driver action execution failed."""
+
     pass
 ```
 

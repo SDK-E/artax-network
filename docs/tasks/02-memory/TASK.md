@@ -50,6 +50,7 @@ class MemoryConfig:
     sqlite_path: str = "artax_memory.db"
     redis_url: str = "redis://localhost:6379"
 
+
 class MemoryEntry:
     key: str
     value: Any
@@ -57,6 +58,7 @@ class MemoryEntry:
     created_at: float  # time.monotonic()
     updated_at: float
     ttl: float | None  # absolute monotonic time when expired, or None
+
 
 class MemoryFilter:
     namespace: str | None = None
@@ -66,15 +68,19 @@ class MemoryFilter:
     after: float | None = None  # created_at threshold
     limit: int | None = None
 
+
 class MemorySnapshot:
     version: str
     timestamp: float
     entries: dict[str, dict[str, Any]]  # namespace -> {key: serialized_entry}
 
+
 class WorkingMemory(Protocol):
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
-    async def store(self, key: str, value: Any, namespace: str = "default", ttl: float | None = None) -> None: ...
+    async def store(
+        self, key: str, value: Any, namespace: str = "default", ttl: float | None = None
+    ) -> None: ...
     async def retrieve(self, key: str, namespace: str = "default") -> Any | None: ...
     async def delete(self, key: str, namespace: str = "default") -> bool: ...
     async def query(self, filter: MemoryFilter) -> dict[str, Any]: ...

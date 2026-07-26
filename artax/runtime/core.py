@@ -4,11 +4,12 @@ The Runtime class serves as the central coordinator, managing the lifecycle of
 drivers, memory stores, schedulers, and the event bus. It owns the main event
 loop and wires subsystems together without implementing their internals.
 """
+
 from __future__ import annotations
 
 import enum
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ..drivers.base import Driver
 from ..events.bus import EventBus
@@ -37,6 +38,7 @@ class RuntimeConfig:
         host: Bind address for the HTTP API server.
         port: Port number for the HTTP API server.
         ws_port: Port number for the WebSocket server.
+
     """
 
     log_level: str = "info"
@@ -55,6 +57,7 @@ class Runtime:
 
     Attributes:
         config: Immutable runtime configuration.
+
     """
 
     def __init__(self, config: RuntimeConfig) -> None:
@@ -62,6 +65,7 @@ class Runtime:
 
         Args:
             config: Runtime configuration parameters.
+
         """
         self._config = config
         self._state = RuntimeState.STOPPED
@@ -76,6 +80,7 @@ class Runtime:
 
         Raises:
             RuntimeError: If the event bus has not been initialized.
+
         """
         if self._event_bus is None:
             raise RuntimeError("Event bus not initialized")
@@ -94,6 +99,7 @@ class Runtime:
 
         Args:
             driver: A driver instance conforming to the Driver protocol.
+
         """
         self._drivers.append(driver)
         logger.info("Registered driver: %s", driver.name)
@@ -106,6 +112,7 @@ class Runtime:
 
         Args:
             memory: A working memory instance conforming to the WorkingMemory protocol.
+
         """
         self._memory = memory
         logger.info("Registered memory store: %s", type(memory).__name__)
@@ -118,6 +125,7 @@ class Runtime:
 
         Args:
             scheduler: A scheduler instance conforming to the Scheduler protocol.
+
         """
         self._scheduler = scheduler
         logger.info("Registered scheduler: %s", type(scheduler).__name__)
@@ -131,8 +139,9 @@ class Runtime:
 
         Raises:
             RuntimeError: If the runtime is already running or starting.
+
         """
-        pass
+        raise NotImplementedError
 
     async def stop(self) -> None:
         """Gracefully shut down the runtime.
@@ -142,8 +151,9 @@ class Runtime:
 
         Raises:
             RuntimeError: If the runtime is not running.
+
         """
-        pass
+        raise NotImplementedError
 
     async def run_forever(self) -> None:
         """Block and process events until ``stop()`` is called.
@@ -152,7 +162,7 @@ class Runtime:
         running, then loops on scheduler ticks and event bus processing until
         the runtime is stopped or encounters an error.
         """
-        pass
+        raise NotImplementedError
 
 
 def cli() -> None:
@@ -162,4 +172,4 @@ def cli() -> None:
     the runtime. This function is intended to be referenced as a console
     script in ``pyproject.toml``.
     """
-    pass
+    raise NotImplementedError

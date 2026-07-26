@@ -71,9 +71,10 @@ class TerminalDriver:
             SemanticEvent.create(
                 type=EventType.OBSERVATION,
                 source=self.name,
-                payload={"terminal_output": raw_output}
+                payload={"terminal_output": raw_output},
             )
         ]
+
 
 # BAD: Driver contains reasoning
 class BadDriver:

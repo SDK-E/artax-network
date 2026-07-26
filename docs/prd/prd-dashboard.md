@@ -206,8 +206,14 @@ interface DashboardState {
 
 ```python
 class DashboardServer:
-    def __init__(self, port: int, event_bus: EventBus, memory: WorkingMemory,
-                 scheduler: Scheduler, drivers: dict[str, Driver]) -> None: ...
+    def __init__(
+        self,
+        port: int,
+        event_bus: EventBus,
+        memory: WorkingMemory,
+        scheduler: Scheduler,
+        drivers: dict[str, Driver],
+    ) -> None: ...
 
     async def start(self) -> None:
         """Start the WebSocket server and begin broadcasting."""

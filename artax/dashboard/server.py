@@ -3,6 +3,7 @@
 Provides a web-based UI for inspecting runtime state, events, and driver
 status. Communicates with the runtime via WebSocket for real-time updates.
 """
+
 from __future__ import annotations
 
 
@@ -17,6 +18,7 @@ class DashboardServer:
         host: Bind address for the dashboard server.
         port: HTTP port for the dashboard.
         ws_port: WebSocket port for real-time updates.
+
     """
 
     def __init__(self, host: str, port: int, ws_port: int) -> None:
@@ -26,6 +28,7 @@ class DashboardServer:
             host: Bind address.
             port: HTTP port number.
             ws_port: WebSocket port number.
+
         """
         self._host = host
         self._port = port
@@ -37,11 +40,11 @@ class DashboardServer:
         Future implementation will bind an ASGI application and begin
         accepting connections.
         """
-        pass
+        raise NotImplementedError
 
     async def stop(self) -> None:
         """Gracefully shut down the dashboard servers.
 
         Closes all WebSocket connections and releases the bound ports.
         """
-        pass
+        raise NotImplementedError

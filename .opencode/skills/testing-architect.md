@@ -71,14 +71,14 @@ async def test_memory_store_retrieve():
     result = await memory.retrieve("key")
     assert result == "value"
 
+
 # GOOD: Mock driver for runtime tests
 class MockDriver:
     async def observe(self) -> list[Event]:
-        return [SemanticEvent.create(
-            type=EventType.OBSERVATION,
-            source="mock",
-            payload={"test": True}
-        )]
+        return [
+            SemanticEvent.create(type=EventType.OBSERVATION, source="mock", payload={"test": True})
+        ]
+
 
 # BAD: Test requires Chromium
 def test_browser_automation():

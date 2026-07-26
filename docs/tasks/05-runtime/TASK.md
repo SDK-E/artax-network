@@ -50,12 +50,14 @@ class RuntimeConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     dashboard_enabled: bool = True
 
+
 class RuntimeState(Enum):
     STOPPED = "stopped"
     STARTING = "starting"
     RUNNING = "running"
     STOPPING = "stopping"
     ERROR = "error"
+
 
 class Runtime:
     def __init__(self, config: RuntimeConfig) -> None: ...
@@ -74,6 +76,7 @@ class Runtime:
     async def stop(self) -> None: ...
     async def run_forever(self) -> None: ...
     def status(self) -> RuntimeStatus: ...
+
 
 class RuntimeStatus:
     state: RuntimeState
@@ -142,7 +145,9 @@ def cli() -> None:
     """Entry point for `artax` command."""
     parser = argparse.ArgumentParser(description="Artax Network Runtime")
     parser.add_argument("--config", type=str, help="Config file path")
-    parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
+    parser.add_argument(
+        "--log-level", default="info", choices=["debug", "info", "warning", "error"]
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--no-dashboard", action="store_true")

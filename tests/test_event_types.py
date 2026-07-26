@@ -1,4 +1,5 @@
 """Tests for artax.events.types module."""
+
 from __future__ import annotations
 
 import time
@@ -10,8 +11,8 @@ from artax.events.types import (
     Event,
     EventBusConfig,
     EventBusStats,
-    EventType,
     EventFilter,
+    EventType,
     SemanticEvent,
 )
 

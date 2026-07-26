@@ -46,6 +46,7 @@ class DashboardConfig:
     event_buffer_size: int = 1000  # events to buffer for new clients
     state_broadcast_interval_ms: int = 1000  # how often to broadcast state
 
+
 class DashboardServer:
     def __init__(
         self,
@@ -68,7 +69,10 @@ JSON message protocol between server and dashboard:
 
 ```python
 # Event broadcast
-{"type": "event", "data": {"event_id": "...", "type": "...", "source": "...", "timestamp": ..., "payload": {...}}}
+{
+    "type": "event",
+    "data": {"event_id": "...", "type": "...", "source": "...", "timestamp": ..., "payload": {...}},
+}
 
 # State update (periodic)
 {"type": "state", "data": {"runtime": {...}, "memory": {...}, "scheduler": {...}, "drivers": {...}}}
@@ -112,7 +116,9 @@ class DashboardServer:
         self._scheduler = scheduler
         self._drivers = drivers
         self._clients: set[websockets.WebSocketServerProtocol] = set()
-        self._event_buffer: collections.deque[Event] = collections.deque(maxlen=config.event_buffer_size)
+        self._event_buffer: collections.deque[Event] = collections.deque(
+            maxlen=config.event_buffer_size
+        )
         self._subscription_id: str | None = None
         self._server = None
 

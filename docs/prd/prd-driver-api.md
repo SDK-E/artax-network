@@ -194,8 +194,8 @@ class DriverHealth:
 ```python
 @dataclass
 class Action:
-    name: str                          # "click", "type", "navigate", "screenshot"
-    target: str | None = None          # CSS selector, URL, etc.
+    name: str  # "click", "type", "navigate", "screenshot"
+    target: str | None = None  # CSS selector, URL, etc.
     parameters: dict[str, Any] = field(default_factory=dict)
     action_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     timestamp: float = field(default_factory=time.time)
