@@ -1,4 +1,4 @@
-.PHONY: install install-all dev test test-cov lint format typecheck check docs dashboard dashboard-install dashboard-build clean docker-up docker-down docker-build help
+.PHONY: install install-all dev hooks test test-cov lint format typecheck check docs dashboard dashboard-install dashboard-build clean docker-up docker-down docker-build help
 
 install:
 	pip install -e ".[dev]"
@@ -6,9 +6,17 @@ install:
 install-all:
 	pip install -e ".[dev,chromium,dashboard]"
 
-dev: install
-	pre-commit install
+dev: install hooks
 	@echo "Ready"
+
+hooks:
+	pre-commit install
+	pre-commit install --hook-type pre-push
+	@echo "Git hooks installed (pre-commit + pre-push)"
+
+hooks-update:
+	pre-commit autoupdate
+	@echo "Hooks updated"
 
 test:
 	pytest
@@ -46,10 +54,8 @@ dashboard-build:
 	cd dashboard && npm run build
 
 clean:
-	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
-	@rm -rf dist build *.egg-info .mypy_cache .ruff_cache htmlcov .coverage coverage.xml
-	@cd dashboard && rm -rf node_modules .next out 2>/dev/null || true
+	python -c "import shutil,glob; [shutil.rmtree(d,True) for d in glob.glob('__pycache__',recursive=True)]+glob.glob('.pytest_cache')+glob.glob('.mypy_cache')+glob.glob('.ruff_cache')+['dist','build']+glob.glob('*.egg-info')+['htmlcov','.coverage','coverage.xml']"
+	@cd dashboard 2>/dev/null && rm -rf node_modules .next out 2>/dev/null || true
 	@true
 
 docker-up:
@@ -62,4 +68,4 @@ docker-build:
 	docker compose build
 
 help:
-	@printf "Available commands:\n  install, install-all, dev, test, test-cov, lint, format, typecheck, check, docs, dashboard, dashboard-install, dashboard-build, clean, docker-up, docker-down, docker-build\n"
+	@printf "Available commands:\n  install, install-all, dev, hooks, hooks-update, test, test-cov, lint, format, typecheck, check, docs, dashboard, dashboard-install, dashboard-build, clean, docker-up, docker-down, docker-build\n"

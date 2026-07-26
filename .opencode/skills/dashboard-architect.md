@@ -66,7 +66,7 @@ Expert in designing the observational dashboard for human operators. Dashboard e
 // GOOD: Dashboard observes via WebSocket
 const useRuntimeEvents = () => {
   const [events, setEvents] = useState<Event[]>([]);
-  
+
   useEffect(() => {
     const ws = new WebSocket('ws://localhost:8081');
     ws.onmessage = (msg) => {
@@ -74,7 +74,7 @@ const useRuntimeEvents = () => {
     };
     return () => ws.close();
   }, []);
-  
+
   return events;
 };
 

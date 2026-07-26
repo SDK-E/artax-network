@@ -214,7 +214,6 @@ class TestEventFilter:
         assert not await f.matches(dom_event)
 
     async def test_async_predicate(self, dom_event: SemanticEvent) -> None:
-
         async def check(event: Event) -> bool:
             return event.source == "chromium"
 

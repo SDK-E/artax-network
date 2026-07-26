@@ -1,25 +1,39 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+    rev: v0.11.13
     hooks:
       - id: ruff
-        args: [--fix]
+        args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+    rev: v1.15.0
     hooks:
       - id: mypy
+        files: ^artax/
+        args: [--config-file=pyproject.toml, --no-strict-optional]
         additional_dependencies: []
-        args: [--config-file=pyproject.toml]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v5.0.0
     hooks:
       - id: check-yaml
       - id: check-toml
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: debug-statements
+      - id: check-merge-conflict
+      - id: check-json
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: .venv/bin/python -m pytest tests/ -x -q --tb=short --no-header
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

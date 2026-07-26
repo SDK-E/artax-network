@@ -105,7 +105,7 @@ Full production implementation:
 - **Subscriptions**: `dict[str, SubscriptionState]` where `SubscriptionState` holds the filter, callback, `asyncio.Queue`, and stats
 - **`start()`**: set running flag, start stats emission task
 - **`stop()`**: set stopped flag, cancel stats task, drain all queues
-- **`publish(event)`**: 
+- **`publish(event)`**:
   1. Append to history ring buffer
   2. For each subscription: check filter matches (source wildcards, type, predicate)
   3. If queue full: drop event, increment dropped count, emit `subscription.dropped` event
