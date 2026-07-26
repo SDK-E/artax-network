@@ -6,10 +6,10 @@ Implement the working memory subsystem for Artax Network. Memory provides persis
 
 ## Reference Documents
 
-- **PRD**: `docs/prd/prd-memory.md` — all resolved design decisions
-- **Existing scaffolding**: `artax/memory/base.py`
-- **Depends on**: `artax/events/types.py` (EventType, SemanticEvent) — must be implemented first
-- **Memory design**: `docs/memory.md`
+- **PRD**: `../../prd/prd-memory.md` — all resolved design decisions
+- **Existing scaffolding**: `../../../artax/memory/base.py`
+- **Depends on**: `../../../artax/events/types.py` (EventType, SemanticEvent) — must be implemented first
+- **Memory design**: `../../memory.md`
 
 ## Resolved Design Decisions
 
@@ -37,7 +37,7 @@ Existing scaffolding is a stub. Key gaps:
 
 ## Implementation Steps
 
-### Step 1: Reconcile `artax/memory/base.py`
+### Step 1: Reconcile `../../../artax/memory/base.py`
 
 Update types to match PRD:
 
@@ -169,6 +169,6 @@ pytest tests/test_memory_types.py tests/test_inmemory_store.py -v
 
 | Action | File |
 |--------|------|
-| MODIFY | `artax/memory/base.py` |
+| MODIFY | `../../../artax/memory/base.py` |
 | CREATE | `tests/test_memory_types.py` |
 | CREATE | `tests/test_inmemory_store.py` |

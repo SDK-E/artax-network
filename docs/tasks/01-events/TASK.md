@@ -6,10 +6,10 @@ Implement the complete event system for Artax Network. This is the foundation la
 
 ## Reference Documents
 
-- **PRD**: `docs/prd/prd-events.md` — contains all resolved design decisions
-- **Existing scaffolding**: `artax/events/types.py`, `artax/events/bus.py`
-- **Architecture**: `ARCHITECTURE.md` — event flow description
-- **Event model**: `docs/event-model.md` — detailed event system design
+- **PRD**: `../../prd/prd-events.md` — contains all resolved design decisions
+- **Existing scaffolding**: `../../../artax/events/types.py`, `../../../artax/events/bus.py`
+- **Architecture**: `../../../ARCHITECTURE.md` — event flow description
+- **Event model**: `../../event-model.md` — detailed event system design
 
 ## Resolved Design Decisions
 
@@ -37,7 +37,7 @@ The existing scaffolding has interfaces that **DO NOT** align with the PRD. You 
 
 ## Implementation Steps
 
-### Step 1: Reconcile `artax/events/types.py`
+### Step 1: Reconcile `../../../artax/events/types.py`
 
 Update the file to match PRD decisions:
 
@@ -78,7 +78,7 @@ class EventType(Enum):
 - `EventBusStats`: dataclass with `events_published` (int), `events_delivered` (int), `subscriptions_active` (int), `subscriptions_dropped` (int), `queue_depth` (int)
 - Keep the `Event` Protocol, `Subscription` Protocol
 
-### Step 2: Reconcile `artax/events/bus.py`
+### Step 2: Reconcile `../../../artax/events/bus.py`
 
 Update the `EventBus` Protocol:
 
@@ -164,9 +164,9 @@ pytest tests/test_event_types.py tests/test_event_bus.py -v
 
 ## Files
 
-| Action | File |
-|--------|------|
-| MODIFY | `artax/events/types.py` |
-| MODIFY | `artax/events/bus.py` |
-| CREATE | `tests/test_event_types.py` |
-| CREATE | `tests/test_event_bus.py` |
+| Action | File                             |
+|--------|----------------------------------|
+| MODIFY | `../../../artax/events/types.py` |
+| MODIFY | `../../../artax/events/bus.py`   |
+| CREATE | `tests/test_event_types.py`      |
+| CREATE | `tests/test_event_bus.py`        |

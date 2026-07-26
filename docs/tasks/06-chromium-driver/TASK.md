@@ -6,11 +6,11 @@ Implement the Chromium browser driver for Artax Network. This is the first suppo
 
 ## Reference Documents
 
-- **PRD**: `docs/prd/prd-browser-driver.md` — all resolved design decisions
-- **Existing scaffolding**: `artax/drivers/chromium/driver.py`, `artax/drivers/chromium/config.py`
+- **PRD**: `../../prd/prd-browser-driver.md` — all resolved design decisions
+- **Existing scaffolding**: `../../../artax/drivers/chromium/driver.py`, `../../../artax/drivers/chromium/config.py`
 - **Depends on**: Task 04 (Driver API, Actions) — must be implemented first
-- **Driver model**: `docs/driver-model.md`
-- **Future drivers**: `docs/future-drivers.md`
+- **Driver model**: `../../driver-model.md`
+- **Future drivers**: `../../future-drivers.md`
 
 ## Resolved Design Decisions
 
@@ -37,7 +37,7 @@ Existing scaffolding is a stub. Key gaps:
 
 ## Implementation Steps
 
-### Step 1: Reconcile `artax/drivers/chromium/config.py`
+### Step 1: Reconcile `../../../artax/drivers/chromium/config.py`
 
 ```python
 @dataclass(frozen=True)
@@ -206,8 +206,8 @@ pytest tests/chromium/ -v
 
 | Action | File |
 |--------|------|
-| MODIFY | `artax/drivers/chromium/config.py` |
-| MODIFY | `artax/drivers/chromium/driver.py` |
+| MODIFY | `../../../artax/drivers/chromium/config.py` |
+| MODIFY | `../../../artax/drivers/chromium/driver.py` |
 | CREATE | `tests/chromium/__init__.py` |
 | CREATE | `tests/chromium/test_chromium_config.py` |
 | CREATE | `tests/chromium/test_chromium_driver.py` |

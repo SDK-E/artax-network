@@ -6,10 +6,10 @@ Implement the event scheduler for Artax Network. The scheduler manages priority 
 
 ## Reference Documents
 
-- **PRD**: `docs/prd/prd-scheduler.md` — all resolved design decisions
-- **Existing scaffolding**: `artax/scheduler/core.py`
-- **Depends on**: `artax/events/types.py` (EventType, SemanticEvent, EventBus) — must be implemented first
-- **Scheduler design**: `docs/scheduler.md`
+- **PRD**: `../../prd/prd-scheduler.md` — all resolved design decisions
+- **Existing scaffolding**: `../../../artax/scheduler/core.py`
+- **Depends on**: `../../../artax/events/types.py` (EventType, SemanticEvent, EventBus) — must be implemented first
+- **Scheduler design**: `../../scheduler.md`
 
 ## Resolved Design Decisions
 
@@ -34,7 +34,7 @@ Existing scaffolding is a stub. Key gaps:
 
 ## Implementation Steps
 
-### Step 1: Reconcile `artax/scheduler/core.py`
+### Step 1: Reconcile `../../../artax/scheduler/core.py`
 
 Update types to match PRD:
 
@@ -172,6 +172,6 @@ pytest tests/test_scheduler_types.py tests/test_memory_scheduler.py -v
 
 | Action | File |
 |--------|------|
-| MODIFY | `artax/scheduler/core.py` |
+| MODIFY | `../../../artax/scheduler/core.py` |
 | CREATE | `tests/test_scheduler_types.py` |
 | CREATE | `tests/test_memory_scheduler.py` |

@@ -91,26 +91,26 @@ The driver never exposes Playwright internals to the runtime. The runtime sees o
 
 ### Event Translation
 
-| Playwright Event | SemanticEvent Type | Payload |
-|---|---|---|
-| `page.load` | `PAGE_LOADED` | `{url, title, load_time_ms}` |
-| `page.error` | `PAGE_ERROR` | `{message, stack, url}` |
-| `page.click` (injected observer) | `USER_INPUT` | `{type: "click", selector, x, y}` |
-| `page.keyboard.press` (injected observer) | `USER_INPUT` | `{type: "keypress", key, code}` |
-| `MutationObserver` callback | `DOM_CHANGED` | `{summary, added_count, removed_count, modified_count}` |
-| Screenshot complete | `SCREENSHOT_TAKEN` | `{image_base64, width, height, format}` |
-| Action success | `ACTION_COMPLETED` | `{action_id, result, duration_ms}` |
-| Action failure | `ACTION_FAILED` | `{action_id, error, duration_ms}` |
+| Playwright Event                          | SemanticEvent Type | Payload                                                 |
+|-------------------------------------------|--------------------|---------------------------------------------------------|
+| `page.load`                               | `PAGE_LOADED`      | `{url, title, load_time_ms}`                            |
+| `page.error`                              | `PAGE_ERROR`       | `{message, stack, url}`                                 |
+| `page.click` (injected observer)          | `USER_INPUT`       | `{type: "click", selector, x, y}`                       |
+| `page.keyboard.press` (injected observer) | `USER_INPUT`       | `{type: "keypress", key, code}`                         |
+| `MutationObserver` callback               | `DOM_CHANGED`      | `{summary, added_count, removed_count, modified_count}` |
+| Screenshot complete                       | `SCREENSHOT_TAKEN` | `{image_base64, width, height, format}`                 |
+| Action success                            | `ACTION_COMPLETED` | `{action_id, result, duration_ms}`                      |
+| Action failure                            | `ACTION_FAILED`    | `{action_id, error, duration_ms}`                       |
 
 ### Action Translation
 
-| Action Name | Playwright Command | Notes |
-|---|---|---|
-| `click` | `page.click(selector, timeout=5000)` | Waits for element, clicks, returns after action |
-| `type` | `page.fill(selector, text)` | Clears input first, then fills |
-| `navigate` | `page.goto(url, wait_until="networkidle")` | Waits for network idle |
-| `screenshot` | `page.screenshot(full_page=True)` | Returns base64 PNG |
-| `evaluate` | `page.evaluate(js_expression)` | Returns evaluated result |
+| Action Name  | Playwright Command                         | Notes                                           |
+|--------------|--------------------------------------------|-------------------------------------------------|
+| `click`      | `page.click(selector, timeout=5000)`       | Waits for element, clicks, returns after action |
+| `type`       | `page.fill(selector, text)`                | Clears input first, then fills                  |
+| `navigate`   | `page.goto(url, wait_until="networkidle")` | Waits for network idle                          |
+| `screenshot` | `page.screenshot(full_page=True)`          | Returns base64 PNG                              |
+| `evaluate`   | `page.evaluate(js_expression)`             | Returns evaluated result                        |
 
 ### MutationObserver Injection
 
@@ -285,16 +285,16 @@ Action(name="evaluate", target="document.title")
 
 ## 8. Resolved Decisions
 
-| # | Question | Decision | Rationale |
-|---|----------|----------|-----------|
+| # | Question                                       | Decision                       | Rationale                                                                             |
+|---|------------------------------------------------|--------------------------------|---------------------------------------------------------------------------------------|
 | 1 | `observe()` uses Playwright events or polling? | **Playwright events directly** | Real-time, event-driven. Consistent with Artax event philosophy. No polling overhead. |
-| 2 | `screenshot()` returns base64 or memory key? | **Base64 in ActionResult** | Simple, self-contained. Memory handles persistence. No indirection. |
-| 3 | MutationObserver before or after PAGE_LOADED? | **Before PAGE_LOADED** | Capture mutations from the start. No missed events during page load. |
-| 4 | `evaluate()` has timeout? | **Driver default timeout** | Safety net with configurable default via `ChromiumConfig`. Prevents hung scripts. |
-| 5 | Support Chrome as alternative? | **Chromium only for now** | Simpler. Chrome path configurable via `ChromiumConfig` for future extension. |
-| 6 | `headless` default? | **`headless=True` default** | Production-safe by default. Override for development via config. |
-| 7 | DOM mutation scope? | **Configurable threshold** | Balance between noise and completeness. Developer controls granularity. |
-| 8 | Multiple CSS selectors per action? | **Yes, fallback chain** | More resilient selectors. Common pattern in test frameworks. |
+| 2 | `screenshot()` returns base64 or memory key?   | **Base64 in ActionResult**     | Simple, self-contained. Memory handles persistence. No indirection.                   |
+| 3 | MutationObserver before or after PAGE_LOADED?  | **Before PAGE_LOADED**         | Capture mutations from the start. No missed events during page load.                  |
+| 4 | `evaluate()` has timeout?                      | **Driver default timeout**     | Safety net with configurable default via `ChromiumConfig`. Prevents hung scripts.     |
+| 5 | Support Chrome as alternative?                 | **Chromium only for now**      | Simpler. Chrome path configurable via `ChromiumConfig` for future extension.          |
+| 6 | `headless` default?                            | **`headless=True` default**    | Production-safe by default. Override for development via config.                      |
+| 7 | DOM mutation scope?                            | **Configurable threshold**     | Balance between noise and completeness. Developer controls granularity.               |
+| 8 | Multiple CSS selectors per action?             | **Yes, fallback chain**        | More resilient selectors. Common pattern in test frameworks.                          |
 
 ---
 

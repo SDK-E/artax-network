@@ -6,10 +6,10 @@ Implement the core runtime for Artax Network. The runtime is the central orchest
 
 ## Reference Documents
 
-- **PRD**: `docs/prd/prd-runtime.md` — all resolved design decisions
-- **Existing scaffolding**: `artax/runtime/core.py`
+- **PRD**: `../../prd/prd-runtime.md` — all resolved design decisions
+- **Existing scaffolding**: `../../../artax/runtime/core.py`
 - **Depends on**: ALL Layer 0 and Layer 1 tasks (Events, Memory, Scheduler, Driver API)
-- **Architecture**: `ARCHITECTURE.md` — runtime component diagram
+- **Architecture**: `../../../ARCHITECTURE.md` — runtime component diagram
 
 ## Resolved Design Decisions
 
@@ -35,7 +35,7 @@ Existing scaffolding is a stub. Key gaps:
 
 ## Implementation Steps
 
-### Step 1: Reconcile `artax/runtime/core.py`
+### Step 1: Reconcile `../../../artax/runtime/core.py`
 
 ```python
 class RuntimeConfig:
@@ -196,5 +196,5 @@ pytest tests/test_runtime.py -v
 
 | Action | File |
 |--------|------|
-| MODIFY | `artax/runtime/core.py` |
+| MODIFY | `../../../artax/runtime/core.py` |
 | CREATE | `tests/test_runtime.py` |

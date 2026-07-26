@@ -6,10 +6,10 @@ Implement the WebSocket dashboard server for Artax Network. The dashboard provid
 
 ## Reference Documents
 
-- **PRD**: `docs/prd/prd-dashboard.md` — all resolved design decisions
-- **Existing scaffolding**: `artax/dashboard/server.py`
+- **PRD**: `../../prd/prd-dashboard.md` — all resolved design decisions
+- **Existing scaffolding**: `../../../artax/dashboard/server.py`
 - **Depends on**: Task 05 (Runtime) — must be implemented first
-- **Dashboard design**: `docs/dashboard.md`
+- **Dashboard design**: `../../dashboard.md`
 
 ## Resolved Design Decisions
 
@@ -35,7 +35,7 @@ Existing scaffolding is a stub. Key gaps:
 
 ## Implementation Steps
 
-### Step 1: Reconcile `artax/dashboard/server.py`
+### Step 1: Reconcile `../../../artax/dashboard/server.py`
 
 ```python
 class DashboardConfig:
@@ -197,7 +197,7 @@ Create `tests/dashboard/test_dashboard_server.py`:
 
 ## Dependency Note
 
-Add `websockets` to the `[project] dependencies` in `pyproject.toml`:
+Add `websockets` to the `[project] dependencies` in `../../../pyproject.toml`:
 ```toml
 dependencies = [
     "websockets>=12.0",
@@ -216,7 +216,7 @@ pytest tests/dashboard/ -v
 
 | Action | File |
 |--------|------|
-| MODIFY | `artax/dashboard/server.py` |
-| MODIFY | `pyproject.toml` (add websockets dependency) |
+| MODIFY | `../../../artax/dashboard/server.py` |
+| MODIFY | `../../../pyproject.toml` (add websockets dependency) |
 | CREATE | `tests/dashboard/__init__.py` |
 | CREATE | `tests/dashboard/test_dashboard_server.py` |

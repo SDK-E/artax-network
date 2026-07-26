@@ -25,13 +25,13 @@ Layer 4 ─── 07-dashboard
 
 | # | Task | PRD | Layer | Depends On |
 |---|------|-----|-------|------------|
-| 01 | Event System | `docs/prd/prd-events.md` | 0 | — |
-| 02 | Working Memory | `docs/prd/prd-memory.md` | 1a | 01 |
-| 03 | Scheduler | `docs/prd/prd-scheduler.md` | 1b | 01 |
-| 04 | Actions + Driver API | `docs/prd/prd-driver-api.md` | 1c | 01 |
-| 05 | Runtime Core | `docs/prd/prd-runtime.md` | 2 | 01–04 |
-| 06 | Chromium Driver | `docs/prd/prd-browser-driver.md` | 3 | 04 |
-| 07 | Dashboard Server | `docs/prd/prd-dashboard.md` | 4 | 05 |
+| 01 | Event System | `../prd/prd-events.md` | 0 | — |
+| 02 | Working Memory | `../prd/prd-memory.md` | 1a | 01 |
+| 03 | Scheduler | `../prd/prd-scheduler.md` | 1b | 01 |
+| 04 | Actions + Driver API | `../prd/prd-driver-api.md` | 1c | 01 |
+| 05 | Runtime Core | `../prd/prd-runtime.md` | 2 | 01–04 |
+| 06 | Chromium Driver | `../prd/prd-browser-driver.md` | 3 | 04 |
+| 07 | Dashboard Server | `../prd/prd-dashboard.md` | 4 | 05 |
 
 ## How to Use
 
@@ -43,6 +43,6 @@ Layer 4 ─── 07-dashboard
 ## Important
 
 - Each task reconciles existing scaffolding with PRD decisions before implementing
-- The existing `artax/` stubs have DIFFERENT interfaces than the PRDs — PRDs are source of truth
+- The existing `../../artax` stubs have DIFFERENT interfaces than the PRDs — PRDs are source of truth
 - All code must pass `mypy --strict`, `ruff check`, and `pytest`
 - No implementation logic in the runtime for driver-specific concerns

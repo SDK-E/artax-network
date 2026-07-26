@@ -6,10 +6,10 @@ Implement the action type system and driver protocol for Artax Network. The Driv
 
 ## Reference Documents
 
-- **PRD**: `docs/prd/prd-driver-api.md` — all resolved design decisions
-- **Existing scaffolding**: `artax/drivers/base.py`, `artax/actions/types.py`
-- **Depends on**: `artax/events/types.py` — must be implemented first
-- **Driver model**: `docs/driver-model.md`
+- **PRD**: `../../prd/prd-driver-api.md` — all resolved design decisions
+- **Existing scaffolding**: `../../../artax/drivers/base.py`, `../../../artax/actions/types.py`
+- **Depends on**: `../../../artax/events/types.py` — must be implemented first
+- **Driver model**: `../../driver-model.md`
 
 ## Resolved Design Decisions
 
@@ -38,7 +38,7 @@ Existing scaffolding has mismatches with PRD:
 
 ## Implementation Steps
 
-### Step 1: Reconcile `artax/actions/types.py`
+### Step 1: Reconcile `../../../artax/actions/types.py`
 
 ```python
 class Action:
@@ -63,7 +63,7 @@ class Intent:
 
 Remove `ActionType` enum — actions use free-form string names. Remove `timeout` from Action.
 
-### Step 2: Reconcile `artax/drivers/base.py`
+### Step 2: Reconcile `../../../artax/drivers/base.py`
 
 ```python
 class DriverState(Enum):
@@ -116,7 +116,7 @@ class DriverActionError(DriverError):
 
 ### Step 3: Implement `BaseDriver`
 
-Create an abstract base class in `artax/drivers/base.py` that provides common driver functionality:
+Create an abstract base class in `../../../artax/drivers/base.py` that provides common driver functionality:
 
 ```python
 class BaseDriver(ABC):
@@ -207,7 +207,7 @@ pytest tests/test_actions.py tests/test_driver_api.py -v
 
 | Action | File |
 |--------|------|
-| MODIFY | `artax/actions/types.py` |
-| MODIFY | `artax/drivers/base.py` |
+| MODIFY | `../../../artax/actions/types.py` |
+| MODIFY | `../../../artax/drivers/base.py` |
 | CREATE | `tests/test_actions.py` |
 | CREATE | `tests/test_driver_api.py` |
