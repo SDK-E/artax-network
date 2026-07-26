@@ -270,23 +270,18 @@ class DriverError(Exception):
 
 ---
 
-## 8. Open Questions
+## 8. Resolved Decisions
 
-1. Should `observe()` return an `AsyncIterator` or use a callback-based pattern for event delivery?
-
-2. Should `execute()` have a timeout parameter, or should the driver handle timeouts internally?
-
-3. Should `health_check()` be optional (with a default "always healthy" implementation) or required?
-
-4. Should the runtime pass the EventBus reference to drivers at connect time, or should drivers receive it at instantiation?
-
-5. Should `DriverConfig` be a `Protocol` (flexible) or a `dataclass` (structured)?
-
-6. Should the runtime validate that a driver's `execute()` action name is in a known set, or pass through any action name?
-
-7. Should `observe()` have a backpressure mechanism if the driver produces events faster than subscribers consume them?
-
-8. Should `DriverHealth.latency_ms` be measured by the driver or by the runtime around `health_check()` calls?
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | `observe()` returns AsyncIterator or callback? | **AsyncIterator** | Pythonic, supports backpressure via `async for`. Natural async iteration pattern. |
+| 2 | `execute()` has timeout param? | **No, driver handles** | Driver knows best how to timeout its operations. Simpler API surface. |
+| 3 | `health_check()` optional or required? | **Required** | Always know if driver is alive. Simple `bool` return. No silent failures. |
+| 4 | EventBus passed at connect or instantiation? | **At connect time** | Driver gets EventBus when it needs it. Clean lifecycle, bus exists before driver uses it. |
+| 5 | `DriverConfig` Protocol or dataclass? | **Protocol** | Flexible, duck-typing friendly. Drivers can use any data structure. |
+| 6 | Runtime validates action names? | **Pass through** | Runtime agnostic. Driver decides what it supports. Decoupled architecture. |
+| 7 | `observe()` backpressure mechanism? | **Yes** | Prevents memory issues with fast drivers. Standard async backpressure. |
+| 8 | `latency_ms` measured by driver or runtime? | **Runtime measures** | More accurate end-to-end latency. Driver cannot measure round-trip accurately. |
 
 ---
 

@@ -219,21 +219,17 @@ The runtime emits the following events on the EventBus:
 
 ---
 
-## 8. Open Questions
+## 8. Resolved Decisions
 
-1. Should the runtime support multiple memory backends simultaneously (e.g., in-memory for hot data, SQLite for persistence), or is one backend per runtime sufficient?
-
-2. Should `Runtime.stop()` enforce a hard timeout (kill after N seconds) or allow indefinite graceful shutdown with a warning?
-
-3. Should the WebSocket server support authentication in v0.1 for local-only security, or is `127.0.0.1` binding sufficient?
-
-4. Should driver registration order guarantee event processing order, or should all drivers process events concurrently?
-
-5. Should the runtime emit metrics about event throughput (events/sec) to the dashboard, or is that a separate concern?
-
-6. Should `RuntimeConfig` support composition (importing base config and overriding specific fields)?
-
-7. Should the CLI support `artax status` to check if a runtime instance is already running?
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | Multiple memory backends simultaneously? | **Yes, multi-backend** | InMemory for hot/cached data, SQLite for persistence. Consistent with architecture showing pluggable backends. |
+| 2 | `Runtime.stop()` hard timeout or indefinite? | **Hard timeout (default 5s)** | Prevents hung shutdown. `RuntimeConfig.shutdown_timeout` controls duration. |
+| 3 | WebSocket authentication in v0.1? | **127.0.0.1 binding only** | Local dev tool. No auth needed for v0.1. Add token auth later for remote use. |
+| 4 | Driver registration order = event processing order? | **Concurrent, no order guarantee** | All drivers process events independently. Simpler, more scalable. Order is not semantically meaningful. |
+| 5 | Emit event throughput metrics to dashboard? | **Yes, basic metrics** | events/sec, queue depth, memory usage. Dashboard needs this for status cards. |
+| 6 | `RuntimeConfig` composition support? | **Base + override composition** | Flexible config layering. Base config can be imported and specific fields overridden. |
+| 7 | CLI `artax status` command? | **Yes** | Simple status check. Useful for development and debugging. |
 
 ---
 

@@ -283,23 +283,18 @@ Action(name="evaluate", target="document.title")
 
 ---
 
-## 8. Open Questions
+## 8. Resolved Decisions
 
-1. Should `observe()` use Playwright's event system directly, or should the driver poll the page at intervals?
-
-2. Should `screenshot()` return base64 data in the ActionResult, or store it in memory and return a key?
-
-3. Should the driver inject the MutationObserver before or after `PAGE_LOADED` events?
-
-4. Should `evaluate()` have a timeout, or should it be the developer's responsibility to write fast JS?
-
-5. Should the driver support launching Chrome (not Chromium) as an alternative browser?
-
-6. Should `headless=False` be the default during development and `headless=True` in production?
-
-7. Should the driver emit events for every DOM mutation, or only for "significant" changes (configurable)?
-
-8. Should the driver support multiple CSS selectors per action (fallback chain)?
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | `observe()` uses Playwright events or polling? | **Playwright events directly** | Real-time, event-driven. Consistent with Artax event philosophy. No polling overhead. |
+| 2 | `screenshot()` returns base64 or memory key? | **Base64 in ActionResult** | Simple, self-contained. Memory handles persistence. No indirection. |
+| 3 | MutationObserver before or after PAGE_LOADED? | **Before PAGE_LOADED** | Capture mutations from the start. No missed events during page load. |
+| 4 | `evaluate()` has timeout? | **Driver default timeout** | Safety net with configurable default via `ChromiumConfig`. Prevents hung scripts. |
+| 5 | Support Chrome as alternative? | **Chromium only for now** | Simpler. Chrome path configurable via `ChromiumConfig` for future extension. |
+| 6 | `headless` default? | **`headless=True` default** | Production-safe by default. Override for development via config. |
+| 7 | DOM mutation scope? | **Configurable threshold** | Balance between noise and completeness. Developer controls granularity. |
+| 8 | Multiple CSS selectors per action? | **Yes, fallback chain** | More resilient selectors. Common pattern in test frameworks. |
 
 ---
 

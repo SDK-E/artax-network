@@ -295,23 +295,18 @@ class DashboardConfig:
 
 ---
 
-## 8. Open Questions
+## 8. Resolved Decisions
 
-1. Should the WebSocket server use a library like `websockets` or `fastapi` with WebSocket support?
-
-2. Should the dashboard be bundled with the Python package or served as a separate static build?
-
-3. Should the dashboard have a health endpoint (`/health`) for monitoring?
-
-4. Should the WebSocket server support multiple concurrent clients, or is one client sufficient for v0.1?
-
-5. Should the dashboard auto-scroll the event feed, or let the user control scrolling?
-
-6. Should the dashboard show the full event payload as JSON, or attempt to render known payload structures?
-
-7. Should the WebSocket server compress messages (permessage-deflate) to reduce bandwidth?
-
-8. Should the dashboard have a "pause events" button that temporarily stops the UI from updating (but events continue in the runtime)?
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | WebSocket library? | **`websockets`** | Lightweight, battle-tested, minimal overhead. No need for full HTTP framework. |
+| 2 | Dashboard bundled or separate? | **Bundled with Python package** | Single install. `dashboard/` built to static files during packaging. |
+| 3 | Health endpoint? | **Yes, `/health`** | Standard practice. Useful for monitoring and CI health checks. |
+| 4 | Multiple concurrent clients? | **Yes** | Standard WebSocket pattern. Future-proofs for team use and debugging. |
+| 5 | Auto-scroll event feed? | **Auto-scroll with user override** | Best UX. Pause on scroll up, resume on scroll to bottom. |
+| 6 | Payload rendering? | **JSON with collapsible tree** | Standard for dev tools. Handles unknown payloads gracefully. |
+| 7 | Message compression? | **No compression for v0.1** | Local tool, bandwidth not a concern. Adds CPU overhead. Can add later. |
+| 8 | Pause events button? | **Yes** | Essential UX for debugging. Events continue in runtime, UI pauses display. |
 
 ---
 

@@ -254,23 +254,18 @@ class MemoryConfig:
 
 ---
 
-## 8. Open Questions
+## 8. Resolved Decisions
 
-1. Should `store()` be async for all backends, or should InMemory be synchronous (it's just a dict)?
-
-2. Should TTL be enforced on access (lazy) or via background cleanup only (eager)? Lazy is simpler; eager is more predictable.
-
-3. Should `snapshot()` include TTL information, or should restored snapshots use fresh TTLs?
-
-4. Should memory emit events for every store/retrieve operation, or only for significant changes (new key, eviction, clear)?
-
-5. Should the InMemory backend use a `dict` or an `OrderedDict` for LRU tracking?
-
-6. Should `MemoryFilter.predicate` receive the full `MemoryEntry` or just `(key, value)`?
-
-7. Should SQLite backend use WAL mode for concurrent read/write performance?
-
-8. Should Redis backend use connection pooling, and if so, what pool size is appropriate?
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | `store()` async for all backends? | **Yes, all async** | Consistent interface. InMemory wraps dict in coroutine trivially. |
+| 2 | TTL enforced lazy or eager? | **Lazy on access** | Simpler, no background task. Standard pattern for TTL caches. |
+| 3 | `snapshot()` includes TTL? | **Yes, include TTL** | Faithful state capture. Restored snapshots preserve original TTL semantics. |
+| 4 | Events for every operation or significant only? | **Significant changes only** | New key, eviction, clear emit events. Reduce noise, meaningful signals only. |
+| 5 | InMemory uses dict or OrderedDict? | **OrderedDict** | Built-in LRU tracking. Supports eviction ordering without extra data structure. |
+| 6 | `MemoryFilter.predicate` receives what? | **Full MemoryEntry** | More context for filtering decisions. Allows filtering on timestamp, type, metadata. |
+| 7 | SQLite WAL mode? | **Yes, WAL mode** | Standard for concurrent read/write. Single config line. |
+| 8 | Redis connection pooling? | **Yes, pool size 10** | Standard Redis practice. Avoids connection overhead. |
 
 ---
 

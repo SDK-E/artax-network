@@ -258,23 +258,18 @@ class SchedulerConfig:
 
 ---
 
-## 8. Open Questions
+## 8. Resolved Decisions
 
-1. Should `schedule()` raise an exception when the queue is full, or log a warning and drop the event?
-
-2. Should `tick()` be called by the runtime's event loop, or does the scheduler manage its own `asyncio.Task`?
-
-3. Should `stop()` deliver all pending events (including LOW) or only URGENT and HIGH?
-
-4. Should delayed events respect priority when becoming ready, or use a separate "ready" queue with FIFO order?
-
-5. Should the scheduler emit a `scheduler.queue.depth` event when queue exceeds a threshold?
-
-6. Should `tick_interval_ms` be configurable at runtime, or fixed at startup?
-
-7. Should the scheduler support cooperative cancellation (asyncio.CancelledEvent) for long-running event handlers?
-
-8. Should `queue_status()` be a method or an event emitted periodically?
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | `schedule()` raises on full queue? | **Log warning + drop** | Prevents blocking. Queue overflow is exceptional. Caller notified via log. |
+| 2 | `tick()` called by runtime or own Task? | **Runtime calls tick()** | Unified event loop. Simpler coordination. No concurrent task management. |
+| 3 | `stop()` delivers all pending or high only? | **All pending** | Clean shutdown, nothing lost. All priority levels delivered before exit. |
+| 4 | Delayed events respect priority? | **Yes, respect priority** | Delayed events re-enter priority queue when ready. Consistent behavior. |
+| 5 | Emit `scheduler.queue.depth` event? | **Yes** | Dashboard can monitor queue health. Threshold-triggered emission. |
+| 6 | `tick_interval_ms` configurable at runtime? | **Yes, configurable** | Allows tuning without restart. Runtime adjustment for performance tuning. |
+| 7 | Support cooperative cancellation? | **Yes** | Standard asyncio pattern. Prevents wasted work on long-running handlers. |
+| 8 | `queue_status()` method or event? | **Method** | On-demand, simple. Dashboard polls as needed. No periodic noise. |
 
 ---
 

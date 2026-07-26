@@ -247,23 +247,18 @@ class EventBusStats:
 
 ---
 
-## 8. Open Questions
+## 8. Resolved Decisions
 
-1. Should `publish()` return a `Future` or stay truly fire-and-forget with logging for dropped events?
-
-2. Should the ring buffer be thread-safe (for potential multi-threaded subscribers) or is asyncio single-thread sufficient?
-
-3. Should event subscriptions support wildcards (e.g., `source="chromium.*"` for all chromium sub-sources)?
-
-4. Should `EventFilter.predicate` be async-capable, or is a sync predicate sufficient given that filtering is fast?
-
-5. Should the EventBus emit a `subscription.dropped` event when a subscriber queue overflows?
-
-6. Should event IDs be UUIDs (globally unique, larger) or sequential integers (compact, process-local)?
-
-7. Should `EventBusStats` be an event emitted periodically, or just a method call?
-
-8. Should events carry a `correlation_id` to link related events across subsystems (e.g., action requested → action completed)?
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | `publish()` returns Future or fire-and-forget? | **Returns Future** | Caller decides whether to await. Enables backpressure-aware publishing. |
+| 2 | Thread-safe ring buffer? | **Yes, thread-safe** | Future-proofs for multi-threaded subscribers. Standard concurrent primitive. |
+| 3 | Wildcard subscriptions? | **Yes** | Support `source="chromium.*"` patterns. More powerful event filtering. |
+| 4 | Async-capable predicate? | **Yes** | Filter predicates can be async. Allows I/O in filter logic. |
+| 5 | Emit `subscription.dropped` on overflow? | **Yes** | Useful for dashboard monitoring and debugging. |
+| 6 | UUIDs or sequential IDs? | **UUIDs** | Globally unique, safe for distributed scenarios. Standard in Python. |
+| 7 | EventBusStats as event or method? | **Periodic event** | More event-driven. Dashboard subscribes to stats stream. |
+| 8 | Events carry `correlation_id`? | **Yes** | Links related events across subsystems. Essential for action tracing (action requested → completed). |
 
 ---
 
