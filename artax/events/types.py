@@ -175,7 +175,9 @@ class EventFilter:
         predicate: Optional callable (sync or async) that receives an event
             and returns True if the event should be delivered.
         after: If set, only events timestamped after this value are matched.
-        limit: Maximum number of matching events to return. None means no limit.
+        limit: Maximum number of matching events. None means no limit.
+            Enforced during subscription matching — once matched events
+            reach this count, subsequent events are rejected.
 
     """
 
@@ -184,21 +186,31 @@ class EventFilter:
     predicate: Callable[[Event], bool | Awaitable[bool]] | None = None
     after: float | None = None
     limit: int | None = None
+    _matched_count: int = field(default=0, init=False, compare=False, repr=False)
+
+    def reset_counter(self) -> None:
+        """Reset the internal match counter."""
+        object.__setattr__(self, "_matched_count", 0)
 
     async def matches(self, event: Event) -> bool:
         """Check if an event passes this filter.
 
         All specified fields must match (AND semantics). Source matching
         uses fnmatch for wildcard support. Predicate evaluation supports
-        both sync and async callables.
+        both sync and async callables. The ``limit`` field is enforced
+        — once this many events have matched, all subsequent calls
+        return False.
 
         Args:
             event: The event to test.
 
         Returns:
-            True if the event matches all filter criteria.
+            True if the event matches all filter criteria and limit not reached.
 
         """
+        if self.limit is not None and self._matched_count >= self.limit:
+            return False
+
         if self.type is not None and event.type != self.type:
             return False
 
@@ -216,6 +228,7 @@ class EventFilter:
             if not result:
                 return False
 
+        object.__setattr__(self, "_matched_count", self._matched_count + 1)
         return True
 
 

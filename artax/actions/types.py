@@ -1,36 +1,18 @@
 """Action type definitions for the Artax runtime.
 
-Actions represent commands issued to drivers. Each action has a type, optional
-target, payload, and timeout. Results carry success status, output data, and
-error information.
+Actions represent commands issued to drivers. Each action has a free-form name,
+optional target, parameters, and timestamp. Results carry success status, output
+data, and error information.
 """
 
 from __future__ import annotations
 
-import enum
+import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import timedelta
 from typing import Any
 
 from ..scheduler.core import Priority
-
-
-class ActionType(enum.Enum):
-    """Enumeration of all supported action types.
-
-    Drivers may support a subset of these types. Custom action types can be
-    added by extending this enum in downstream projects.
-    """
-
-    NAVIGATE = "navigate"
-    CLICK = "click"
-    TYPE = "type"
-    SCROLL = "scroll"
-    SCREENSHOT = "screenshot"
-    EXECUTE_SCRIPT = "execute_script"
-    WAIT = "wait"
-    CUSTOM = "custom"
 
 
 @dataclass(frozen=True)
@@ -38,19 +20,19 @@ class Action:
     """A command to be executed by a driver.
 
     Attributes:
-        id: Unique identifier for this action instance.
-        type: The kind of action to perform.
+        action_id: Unique identifier for this action instance (hex string).
+        name: Action name — free-form string, not restricted to an enum.
         target: Optional selector or identifier for the action target.
-        payload: Arbitrary data required by the action type.
-        timeout: Maximum duration to wait for action completion.
+        parameters: Arbitrary parameters required by the action.
+        timestamp: Monotonic timestamp when the action was created.
 
     """
 
-    id: uuid.UUID
-    type: ActionType
+    name: str
+    action_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     target: str | None = None
-    payload: dict[str, Any] = field(default_factory=dict)
-    timeout: timedelta = field(default_factory=lambda: timedelta(seconds=30))
+    parameters: dict[str, Any] = field(default_factory=dict)
+    timestamp: float = field(default_factory=time.monotonic)
 
 
 @dataclass(frozen=True)
@@ -62,23 +44,20 @@ class ActionResult:
         success: Whether the action completed without error.
         data: Arbitrary output data from the action.
         error: Human-readable error message if the action failed.
-        duration: Wall-clock time taken to execute the action.
+        duration_ms: Wall-clock time taken to execute the action in milliseconds.
 
     """
 
-    action_id: uuid.UUID
+    action_id: str
     success: bool
     data: Any = None
     error: str | None = None
-    duration: timedelta = field(default_factory=timedelta)
+    duration_ms: float = 0.0
 
 
 @dataclass(frozen=True)
 class Intent:
     """A high-level goal composed of a sequence of actions.
-
-    Intents represent user or agent intentions that require multiple
-    atomic actions to fulfill.
 
     Attributes:
         description: Natural language description of the intent.
@@ -89,4 +68,4 @@ class Intent:
 
     description: str
     actions: list[Action] = field(default_factory=list)
-    priority: Priority = Priority.NORMAL
+    priority: Priority = Priority.MEDIUM

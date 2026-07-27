@@ -7,6 +7,7 @@ persistence, and Redis for distributed coordination.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import time
@@ -256,12 +257,24 @@ class InMemoryStore:
         self._event_bus = event_bus
         self._storage: dict[str, OrderedDict[str, MemoryEntry]] = {}
         self._version: int = 0
+        self._cleanup_task: asyncio.Task[None] | None = None
+        self._running = False
 
     async def start(self) -> None:
-        """No-op. In-memory storage is always ready."""
+        """Start the store and spawn the TTL cleanup background task."""
+        self._running = True
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
     async def stop(self) -> None:
-        """Clear all data."""
+        """Stop the cleanup task and clear all data."""
+        self._running = False
+        if self._cleanup_task is not None:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_task = None
         self._storage.clear()
 
     async def store(
@@ -476,6 +489,36 @@ class InMemoryStore:
                     ttl=data["ttl"],
                 )
             self._storage[ns_name] = ns
+
+    async def _cleanup_loop(self) -> None:
+        """Periodically sweep and remove expired entries."""
+        try:
+            while self._running:
+                await asyncio.sleep(self._config.cleanup_interval)
+                if not self._running:
+                    break
+                removed = 0
+                now = time.monotonic()
+                for ns_name in list(self._storage.keys()):
+                    ns = self._storage.get(ns_name)
+                    if ns is None:
+                        continue
+                    expired = [
+                        k for k, entry in ns.items() if entry.ttl is not None and now > entry.ttl
+                    ]
+                    for k in expired:
+                        del ns[k]
+                        removed += 1
+                    if not ns:
+                        del self._storage[ns_name]
+                if removed > 0:
+                    logger.debug("TTL cleanup removed %d expired entries", removed)
+                    await self._emit_event(
+                        "memory_cleanup",
+                        {"removed": removed},
+                    )
+        except asyncio.CancelledError:
+            return
 
     async def _emit_event(self, operation: str, payload: dict[str, Any]) -> None:
         """Publish a memory event if an event bus is connected."""

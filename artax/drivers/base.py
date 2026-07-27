@@ -1,18 +1,24 @@
-"""Driver protocol and lifecycle management.
+"""Driver protocol, base class, and lifecycle management.
 
 Drivers encapsulate environment interaction (browsers, terminals, APIs) and
 translate between raw environment state and Artax events. The runtime never
 imports concrete driver code directly; all interaction is via the Driver
-protocol.
+protocol or BaseDriver ABC.
 """
 
 from __future__ import annotations
 
 import enum
+import logging
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Protocol
 
 from ..actions.types import Action, ActionResult
 from ..events.types import Event
+
+logger = logging.getLogger(__name__)
 
 
 class DriverState(enum.Enum):
@@ -21,7 +27,82 @@ class DriverState(enum.Enum):
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
     CONNECTED = "connected"
+    UNHEALTHY = "unhealthy"
     ERROR = "error"
+
+
+@dataclass
+class DriverHealth:
+    """Health status returned by driver.health_check().
+
+    Attributes:
+        state: Current driver lifecycle state.
+        message: Human-readable health status message.
+        latency_ms: Latency of the health check in milliseconds (measured by runtime).
+        last_event_at: Monotonic timestamp of the last event emitted by this driver.
+        error_count: Cumulative error count since last connect.
+
+    """
+
+    state: DriverState
+    message: str = ""
+    latency_ms: float = 0.0
+    last_event_at: float | None = None
+    error_count: int = 0
+
+
+class DriverError(Exception):
+    """Base exception for driver errors."""
+
+    def __init__(self, driver: str, message: str, *, recoverable: bool = True) -> None:
+        """Initialize driver error.
+
+        Args:
+            driver: Name of the driver that raised the error.
+            message: Human-readable error description.
+            recoverable: Whether the driver can recover without reconnection.
+
+        """
+        self.driver = driver
+        self.recoverable = recoverable
+        super().__init__(f"[{driver}] {message}")
+
+
+class DriverConnectionError(DriverError):
+    """Driver failed to connect."""
+
+    def __init__(self, driver: str, message: str) -> None:
+        """Initialize connection error (always irrecoverable)."""
+        super().__init__(driver, message, recoverable=False)
+
+
+class DriverTimeoutError(DriverError):
+    """Driver operation timed out."""
+
+    def __init__(self, driver: str, message: str) -> None:
+        """Initialize timeout error (recoverable)."""
+        super().__init__(driver, message, recoverable=True)
+
+
+class DriverActionError(DriverError):
+    """Driver action execution failed."""
+
+    def __init__(self, driver: str, message: str) -> None:
+        """Initialize action error (recoverable)."""
+        super().__init__(driver, message, recoverable=True)
+
+
+class DriverConfig(Protocol):
+    """Structural protocol for driver-specific configuration objects.
+
+    Each driver implementation defines its own concrete config dataclass
+    that satisfies this protocol.
+    """
+
+    @property
+    def driver_type(self) -> str:
+        """Identifier for the driver implementation (e.g., 'chromium', 'terminal')."""
+        ...
 
 
 class Driver(Protocol):
@@ -35,74 +116,138 @@ class Driver(Protocol):
 
     @property
     def name(self) -> str:
-        """Human-readable name of this driver instance."""
+        """Unique name for this driver instance."""
         ...
 
     @property
-    def environment(self) -> str:
-        """Identifier for the environment this driver manages (e.g. 'chromium')."""
-        ...
-
-    @property
-    def is_connected(self) -> bool:
-        """Whether the driver is currently connected to its environment."""
+    def state(self) -> DriverState:
+        """Current lifecycle state."""
         ...
 
     async def connect(self) -> None:
-        """Establish a connection to the underlying environment.
-
-        Raises:
-            ConnectionError: If the environment cannot be reached.
-
-        """
+        """Connect to the environment. Raise DriverError on failure."""
         ...
 
     async def disconnect(self) -> None:
-        """Tear down the connection to the underlying environment.
-
-        Safe to call multiple times; subsequent calls are no-ops.
-        """
+        """Disconnect from the environment. Clean up resources."""
         ...
 
-    async def observe(self) -> list[Event]:
-        """Capture the current state of the environment as a list of events.
-
-        Returns:
-            A list of Observation events representing the environment state.
-
-        """
+    async def observe(self) -> AsyncIterator[Event]:
+        """Yield events from the environment. Runs continuously while connected."""
         ...
 
     async def execute(self, action: Action) -> ActionResult:
-        """Execute an action against the environment.
-
-        Args:
-            action: The action to perform.
-
-        Returns:
-            The result of the action execution.
-
-        """
+        """Execute an action in the environment. Return result or error."""
         ...
 
-    async def health_check(self) -> bool:
-        """Probe whether the driver is healthy and responsive.
-
-        Returns:
-            True if the driver is operational, False otherwise.
-
-        """
+    async def health_check(self) -> DriverHealth:
+        """Check driver and environment health. Return health status."""
         ...
 
 
-class DriverConfig(Protocol):
-    """Structural protocol for driver-specific configuration objects.
+class BaseDriver(ABC):
+    """Abstract base class providing common driver functionality.
 
-    Each driver implementation defines its own concrete config dataclass
-    that satisfies this protocol.
+    Subclasses must implement _do_connect, _do_disconnect, observe, and execute.
+    The base class manages state transitions, error counting, and health checks.
     """
 
+    def __init__(self, name: str, driver_type: str) -> None:
+        """Initialize the base driver.
+
+        Args:
+            name: Unique name for this driver instance.
+            driver_type: Identifier for the driver implementation.
+
+        """
+        self._name = name
+        self._driver_type = driver_type
+        self._state = DriverState.DISCONNECTED
+        self._error_count = 0
+        self._last_event_at: float | None = None
+
     @property
-    def driver_name(self) -> str:
-        """Canonical name for this driver configuration."""
+    def name(self) -> str:
+        """Return the unique name of this driver instance."""
+        return self._name
+
+    @property
+    def driver_type(self) -> str:
+        """Return the driver type identifier."""
+        return self._driver_type
+
+    @property
+    def state(self) -> DriverState:
+        """Return the current lifecycle state."""
+        return self._state
+
+    @property
+    def error_count(self) -> int:
+        """Return the cumulative error count since last connect."""
+        return self._error_count
+
+    async def connect(self) -> None:
+        """Connect to the environment. Manages state transitions."""
+        self._state = DriverState.CONNECTING
+        try:
+            await self._do_connect()
+            self._state = DriverState.CONNECTED
+            logger.info("Driver '%s' connected", self._name)
+        except DriverError:
+            self._state = DriverState.ERROR
+            self._error_count += 1
+            raise
+        except Exception as exc:
+            self._state = DriverState.ERROR
+            self._error_count += 1
+            raise DriverError(self._name, str(exc)) from exc
+
+    async def disconnect(self) -> None:
+        """Disconnect from the environment. Safe to call multiple times."""
+        if self._state == DriverState.DISCONNECTED:
+            return
+        try:
+            await self._do_disconnect()
+        except Exception as exc:  # noqa: BLE001 — disconnect must always succeed
+            logger.warning("Driver '%s' disconnect error: %s", self._name, exc)
+        finally:
+            self._state = DriverState.DISCONNECTED
+            logger.info("Driver '%s' disconnected", self._name)
+
+    async def health_check(self) -> DriverHealth:
+        """Return current health status. Runtime wraps this to measure latency_ms."""
+        return DriverHealth(
+            state=self._state,
+            error_count=self._error_count,
+            last_event_at=self._last_event_at,
+        )
+
+    async def _publish_event(self, event: Event, bus: object | None = None) -> None:
+        """Publish an event to the bus if available.
+
+        Subclasses that receive an EventBus at connect time should store it
+        and pass it here.
+        """
+        if bus is not None and hasattr(bus, "publish"):
+            publish = bus.publish
+            await publish(event)
+
+    @abstractmethod
+    async def _do_connect(self) -> None:
+        """Environment-specific connection logic."""
+        ...
+
+    @abstractmethod
+    async def _do_disconnect(self) -> None:
+        """Environment-specific disconnection logic."""
+        ...
+
+    @abstractmethod
+    async def observe(self) -> AsyncIterator[Event]:
+        """Yield events from the environment."""
+        ...
+
+    @abstractmethod
+    async def execute(self, action: Action) -> ActionResult:
+        """Execute an action in the environment."""
         ...

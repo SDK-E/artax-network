@@ -488,6 +488,25 @@ class TestLifecycle:
         await store.start()  # double start is fine
         assert await store.size() == 0
 
+    async def test_stop_cancels_cleanup_task(self) -> None:
+        store = InMemoryStore()
+        await store.start()
+        assert store._cleanup_task is not None
+        assert not store._cleanup_task.done()
+        await store.stop()
+        assert store._cleanup_task is None
+
+    async def test_cleanup_removes_expired_entries(self) -> None:
+        config = MemoryConfig(cleanup_interval=0.05)
+        store = InMemoryStore(config=config)
+        await store.start()
+        await store.store("expires", "v", ttl=0.01)
+        await store.store("persists", "v")
+        await asyncio.sleep(0.15)
+        assert await store.retrieve("expires") is None
+        assert await store.size() == 1
+        await store.stop()
+
 
 class TestConcurrency:
     """Concurrent operations from multiple coroutines."""

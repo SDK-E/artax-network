@@ -243,6 +243,29 @@ class TestEventFilter:
         )
         assert e1.correlation_id == e2.correlation_id == cid
 
+    async def test_limit_enforced(self, dom_event: SemanticEvent) -> None:
+        f = EventFilter(limit=2)
+        assert await f.matches(dom_event)
+        assert await f.matches(dom_event)
+        assert not await f.matches(dom_event)
+
+    async def test_limit_with_type_filter(self) -> None:
+        f = EventFilter(type=EventType.DOM_CHANGED, limit=1)
+        e1 = SemanticEvent.create(type=EventType.DOM_CHANGED, source="a", payload={})
+        e2 = SemanticEvent.create(type=EventType.DOM_CHANGED, source="b", payload={})
+        e3 = SemanticEvent.create(type=EventType.PAGE_LOADED, source="a", payload={})
+        assert await f.matches(e1)
+        assert not await f.matches(e2)
+        # PAGE_LOADED doesn't match type filter, counter not incremented
+        assert not await f.matches(e3)
+
+    async def test_reset_counter(self, dom_event: SemanticEvent) -> None:
+        f = EventFilter(limit=1)
+        assert await f.matches(dom_event)
+        assert not await f.matches(dom_event)
+        f.reset_counter()
+        assert await f.matches(dom_event)
+
 
 class TestEventBusConfig:
     def test_defaults(self) -> None:
