@@ -7,20 +7,24 @@ loop and wires subsystems together without implementing their internals.
 
 from __future__ import annotations
 
+import asyncio
 import enum
 import logging
-from dataclasses import dataclass
+import signal
+import time
+from dataclasses import dataclass, field
 
-from ..drivers.base import Driver
-from ..events.bus import EventBus
-from ..memory.base import WorkingMemory
-from ..scheduler.core import Scheduler
+from ..drivers.base import Driver, DriverState
+from ..events.bus import MemoryEventBus
+from ..events.types import EventBusConfig, EventType, SemanticEvent
+from ..memory.base import InMemoryStore, MemoryConfig, WorkingMemory
+from ..scheduler.core import MemoryScheduler, Scheduler, SchedulerConfig
 
 logger = logging.getLogger(__name__)
 
 
 class RuntimeState(enum.Enum):
-    """Lifecycle states of the Artax runtime."""
+    """Lifecycle state of the Runtime."""
 
     STOPPED = "stopped"
     STARTING = "starting"
@@ -31,65 +35,114 @@ class RuntimeState(enum.Enum):
 
 @dataclass
 class RuntimeConfig:
-    """Configuration for the Artax runtime instance.
+    """Configuration for the Runtime.
 
     Attributes:
-        log_level: Logging verbosity level (debug, info, warning, error, critical).
-        host: Bind address for the HTTP API server.
-        port: Port number for the HTTP API server.
-        ws_port: Port number for the WebSocket server.
+        shutdown_timeout: Seconds to wait for each subsystem to stop
+            before proceeding to the next.
+        drivers: List of driver configurations (unused, drivers are
+            registered directly).
+        event_bus: Event bus configuration.
+        memory: Memory store configuration.
+        scheduler: Scheduler configuration.
 
     """
 
-    log_level: str = "info"
-    host: str = "0.0.0.0"
-    port: int = 8080
-    ws_port: int = 8081
+    shutdown_timeout: float = 5.0
+    drivers: list[object] = field(default_factory=list)
+    event_bus: EventBusConfig = field(default_factory=EventBusConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
+    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+
+
+@dataclass
+class RuntimeStatus:
+    """Point-in-time snapshot of runtime state.
+
+    Attributes:
+        state: Current lifecycle state.
+        uptime: Seconds since the runtime entered the RUNNING state.
+        drivers_connected: Number of drivers in the CONNECTED state.
+        events_published: Total events published through the runtime's
+            event bus since startup.
+
+    """
+
+    state: RuntimeState = RuntimeState.STOPPED
+    uptime: float = 0.0
+    drivers_connected: int = 0
+    events_published: int = 0
 
 
 class Runtime:
-    """Central orchestrator for the Artax event-driven runtime.
+    """Central orchestrator for Artax Network.
 
-    The Runtime owns the core subsystems -- event bus, memory, scheduler, and
-    driver registry -- and coordinates their lifecycle. Drivers register
-    themselves after construction; they are never imported directly by the
-    runtime module, preserving clean dependency direction.
+    Manages the lifecycle of all subsystems in a defined order:
 
-    Attributes:
-        config: Immutable runtime configuration.
+    - **Startup**: EventBus → Memory → Scheduler → Drivers
+    - **Shutdown**: Drivers → Scheduler → Memory → EventBus
+
+    The Runtime does not implement subsystem internals. It creates instances,
+    wires them together, and delegates all work to them.
+
+    Usage::
+
+        runtime = Runtime(RuntimeConfig())
+        runtime.register_driver(my_driver)
+        await runtime.run_forever()
 
     """
 
-    def __init__(self, config: RuntimeConfig) -> None:
-        """Initialize the runtime with the given configuration.
+    def __init__(self, config: RuntimeConfig | None = None) -> None:
+        """Initialize the Runtime.
 
         Args:
-            config: Runtime configuration parameters.
+            config: Runtime configuration. Uses defaults if None.
 
         """
-        self._config = config
+        self._config = config or RuntimeConfig()
         self._state = RuntimeState.STOPPED
         self._drivers: list[Driver] = []
+        self._driver_names: dict[str, Driver] = {}
+        self._event_bus: MemoryEventBus | None = None
         self._memory: WorkingMemory | None = None
         self._scheduler: Scheduler | None = None
-        self._event_bus: EventBus | None = None
-
-    @property
-    def event_bus(self) -> EventBus:
-        """Return the runtime event bus instance.
-
-        Raises:
-            RuntimeError: If the event bus has not been initialized.
-
-        """
-        if self._event_bus is None:
-            raise RuntimeError("Event bus not initialized")
-        return self._event_bus
+        self._started_at: float = 0.0
+        self._run_task: asyncio.Task[None] | None = None
 
     @property
     def state(self) -> RuntimeState:
         """Return the current runtime lifecycle state."""
         return self._state
+
+    @property
+    def event_bus(self) -> MemoryEventBus:
+        """Return the event bus. Raises RuntimeError if not started."""
+        if self._event_bus is None:
+            msg = "EventBus not available: runtime not started"
+            raise RuntimeError(msg)
+        return self._event_bus
+
+    @property
+    def memory(self) -> WorkingMemory:
+        """Return the memory store. Raises RuntimeError if not started."""
+        if self._memory is None:
+            msg = "Memory not available: runtime not started"
+            raise RuntimeError(msg)
+        return self._memory
+
+    @property
+    def scheduler(self) -> Scheduler:
+        """Return the scheduler. Raises RuntimeError if not started."""
+        if self._scheduler is None:
+            msg = "Scheduler not available: runtime not started"
+            raise RuntimeError(msg)
+        return self._scheduler
+
+    @property
+    def drivers(self) -> list[Driver]:
+        """Return the list of registered drivers."""
+        return list(self._drivers)
 
     def register_driver(self, driver: Driver) -> None:
         """Register a driver with the runtime.
@@ -101,8 +154,10 @@ class Runtime:
             driver: A driver instance conforming to the Driver protocol.
 
         """
-        self._drivers.append(driver)
-        logger.info("Registered driver: %s", driver.name)
+        if driver.name not in self._driver_names:
+            self._drivers.append(driver)
+            self._driver_names[driver.name] = driver
+            logger.info("Registered driver: %s", driver.name)
 
     def register_memory(self, memory: WorkingMemory) -> None:
         """Register a working memory store with the runtime.
@@ -111,7 +166,7 @@ class Runtime:
         the previous store.
 
         Args:
-            memory: A working memory instance conforming to the WorkingMemory protocol.
+            memory: A working memory instance.
 
         """
         self._memory = memory
@@ -124,52 +179,229 @@ class Runtime:
         the previous scheduler.
 
         Args:
-            scheduler: A scheduler instance conforming to the Scheduler protocol.
+            scheduler: A scheduler instance.
 
         """
         self._scheduler = scheduler
         logger.info("Registered scheduler: %s", type(scheduler).__name__)
 
-    async def start(self) -> None:
-        """Transition the runtime from STOPPED to RUNNING.
+    def status(self) -> RuntimeStatus:
+        """Return a point-in-time snapshot of runtime state."""
+        uptime = 0.0
+        events_published = 0
+        drivers_connected = 0
 
-        Initializes the event bus, connects all registered drivers, and starts
-        the main event loop. If any driver fails to connect, the runtime
-        transitions to ERROR state.
+        if self._state == RuntimeState.RUNNING and self._started_at > 0:
+            uptime = time.monotonic() - self._started_at
+
+        if self._event_bus is not None:
+            bus_stats = self._event_bus.stats()
+            events_published = bus_stats.events_published
+
+        for driver in self._drivers:
+            if driver.state == DriverState.CONNECTED:
+                drivers_connected += 1
+
+        return RuntimeStatus(
+            state=self._state,
+            uptime=uptime,
+            events_published=events_published,
+            drivers_connected=drivers_connected,
+        )
+
+    async def start(self) -> None:
+        """Initialize all subsystems and enter the running state.
+
+        Startup order: EventBus → Memory → Scheduler → Drivers.
 
         Raises:
-            RuntimeError: If the runtime is already running or starting.
+            RuntimeError: If already running or starting.
 
         """
-        raise NotImplementedError
+        if self._state not in (RuntimeState.STOPPED, RuntimeState.ERROR):
+            msg = f"Cannot start: state is {self._state.value}"
+            raise RuntimeError(msg)
+
+        self._state = RuntimeState.STARTING
+        logger.info("Runtime starting")
+
+        try:
+            await self._start_event_bus()
+            await self._start_memory()
+            await self._start_scheduler()
+            await self._connect_drivers()
+
+            self._state = RuntimeState.RUNNING
+            self._started_at = time.monotonic()
+            await self._publish_event(EventType.RUNTIME_STARTED)
+            logger.info("Runtime started")
+        except Exception:
+            self._state = RuntimeState.ERROR
+            logger.exception("Runtime failed to start")
+            raise
+
+    async def _start_event_bus(self) -> None:
+        self._event_bus = MemoryEventBus(config=self._config.event_bus)
+        await self._event_bus.start()
+        logger.info("EventBus started")
+
+    async def _start_memory(self) -> None:
+        assert self._event_bus is not None
+        memory = InMemoryStore(config=self._config.memory, event_bus=self._event_bus)
+        await memory.start()
+        self._memory = memory
+        logger.info("Memory started")
+
+    async def _start_scheduler(self) -> None:
+        assert self._event_bus is not None
+        if self._scheduler is None:
+            self._scheduler = MemoryScheduler(
+                config=self._config.scheduler, event_bus=self._event_bus
+            )
+        await self._scheduler.start()
+        logger.info("Scheduler started")
+
+    async def _connect_drivers(self) -> None:
+        assert self._event_bus is not None
+        for driver in self._drivers:
+            try:
+                self._state = RuntimeState.STARTING
+                await driver.connect()
+                event = SemanticEvent.create(
+                    type=EventType.DRIVER_CONNECTED,
+                    source="runtime",
+                    payload={"driver": driver.name},
+                )
+                await self._event_bus.publish(event)
+                logger.info("Driver '%s' connected", driver.name)
+            except Exception:
+                logger.exception("Driver '%s' failed to connect", driver.name)
+                event = SemanticEvent.create(
+                    type=EventType.DRIVER_UNHEALTHY,
+                    source="runtime",
+                    payload={"driver": driver.name},
+                )
+                await self._event_bus.publish(event)
 
     async def stop(self) -> None:
-        """Gracefully shut down the runtime.
+        """Gracefully shut down all subsystems in reverse order.
 
-        Drains the event bus, disconnects all drivers, and transitions to
-        STOPPED. Safe to call multiple times; subsequent calls are no-ops.
-
-        Raises:
-            RuntimeError: If the runtime is not running.
-
+        Shutdown order: Drivers → Scheduler → Memory → EventBus.
+        Safe to call multiple times; subsequent calls are no-ops.
         """
-        raise NotImplementedError
+        if self._state in (RuntimeState.STOPPED, RuntimeState.STOPPING):
+            return
+
+        self._state = RuntimeState.STOPPING
+        logger.info("Runtime stopping")
+
+        try:
+            await self._publish_event(EventType.RUNTIME_STOPPING)
+            await self._disconnect_drivers()
+            await self._stop_scheduler()
+            await self._stop_memory()
+            await self._stop_event_bus()
+        except Exception:
+            logger.exception("Error during shutdown")
+
+        self._state = RuntimeState.STOPPED
+        logger.info("Runtime stopped")
+
+    async def _publish_event(
+        self,
+        event_type: EventType,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        if self._event_bus is not None:
+            event = SemanticEvent.create(
+                type=event_type,
+                source="runtime",
+                payload=payload or {"timestamp": time.monotonic()},
+            )
+            await self._event_bus.publish(event)
+
+    async def _disconnect_drivers(self) -> None:
+        for driver in reversed(self._drivers):
+            try:
+                await asyncio.wait_for(
+                    driver.disconnect(),
+                    timeout=self._config.shutdown_timeout,
+                )
+                if self._event_bus is not None:
+                    event = SemanticEvent.create(
+                        type=EventType.DRIVER_DISCONNECTED,
+                        source="runtime",
+                        payload={"driver": driver.name},
+                    )
+                    await self._event_bus.publish(event)
+                logger.info("Driver '%s' disconnected", driver.name)
+            except TimeoutError:
+                logger.warning("Driver '%s' disconnect timed out", driver.name)
+            except OSError as exc:
+                logger.warning("Driver '%s' disconnect error: %s", driver.name, exc)
+
+    async def _stop_scheduler(self) -> None:
+        if self._scheduler is not None:
+            try:
+                await asyncio.wait_for(
+                    self._scheduler.stop(),
+                    timeout=self._config.shutdown_timeout,
+                )
+            except TimeoutError:
+                logger.warning("Scheduler stop timed out")
+            logger.info("Scheduler stopped")
+
+    async def _stop_memory(self) -> None:
+        if self._memory is not None:
+            try:
+                await asyncio.wait_for(
+                    self._memory.stop(),
+                    timeout=self._config.shutdown_timeout,
+                )
+            except TimeoutError:
+                logger.warning("Memory stop timed out")
+            logger.info("Memory stopped")
+
+    async def _stop_event_bus(self) -> None:
+        if self._event_bus is not None:
+            try:
+                await asyncio.wait_for(
+                    self._event_bus.drain(),
+                    timeout=self._config.shutdown_timeout,
+                )
+            except TimeoutError:
+                logger.warning("EventBus drain timed out")
+            try:
+                await asyncio.wait_for(
+                    self._event_bus.stop(),
+                    timeout=self._config.shutdown_timeout,
+                )
+            except TimeoutError:
+                logger.warning("EventBus stop timed out")
+            logger.info("EventBus stopped")
 
     async def run_forever(self) -> None:
-        """Block and process events until ``stop()`` is called.
+        """Start the runtime and block until ``stop()`` is called.
 
-        This is the main event loop. It calls ``start()`` if not already
-        running, then loops on scheduler ticks and event bus processing until
-        the runtime is stopped or encounters an error.
+        Calls ``start()`` if not already running, then blocks on the asyncio
+        event loop. On SIGINT/SIGTERM, initiates graceful shutdown.
         """
-        raise NotImplementedError
+        if self._state != RuntimeState.RUNNING:
+            await self.start()
 
+        self._run_task = asyncio.current_task()
+        stop_event = asyncio.Event()
 
-def cli() -> None:
-    """Entry point for the ``artax`` command-line interface.
+        loop = asyncio.get_running_loop()
 
-    Parses command-line arguments, constructs a RuntimeConfig, and starts
-    the runtime. This function is intended to be referenced as a console
-    script in ``pyproject.toml``.
-    """
-    raise NotImplementedError
+        def _signal_handler() -> None:
+            logger.info("Received shutdown signal")
+            loop.call_soon_threadsafe(stop_event.set)
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _signal_handler)
+
+        try:
+            await stop_event.wait()
+        finally:
+            await self.stop()
