@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -132,7 +132,7 @@ class Driver(Protocol):
         """Disconnect from the environment. Clean up resources."""
         ...
 
-    async def observe(self) -> AsyncIterator[Event]:
+    async def observe(self) -> AsyncGenerator[Event, None]:
         """Yield events from the environment. Runs continuously while connected."""
         ...
 
@@ -243,7 +243,7 @@ class BaseDriver(ABC):
         ...
 
     @abstractmethod
-    async def observe(self) -> AsyncIterator[Event]:
+    async def observe(self) -> AsyncGenerator[Event, None]:
         """Yield events from the environment."""
         ...
 

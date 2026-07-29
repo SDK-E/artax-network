@@ -109,6 +109,7 @@ class Runtime:
         self._scheduler: Scheduler | None = None
         self._started_at: float = 0.0
         self._run_task: asyncio.Task[None] | None = None
+        self._stop_event: asyncio.Event | None = None
 
     @property
     def state(self) -> RuntimeState:
@@ -295,6 +296,9 @@ class Runtime:
         self._state = RuntimeState.STOPPING
         logger.info("Runtime stopping")
 
+        if self._stop_event is not None:
+            self._stop_event.set()
+
         try:
             await self._publish_event(EventType.RUNTIME_STOPPING)
             await self._disconnect_drivers()
@@ -390,18 +394,19 @@ class Runtime:
             await self.start()
 
         self._run_task = asyncio.current_task()
-        stop_event = asyncio.Event()
+        self._stop_event = asyncio.Event()
 
         loop = asyncio.get_running_loop()
 
         def _signal_handler() -> None:
             logger.info("Received shutdown signal")
-            loop.call_soon_threadsafe(stop_event.set)
+            assert self._stop_event is not None
+            loop.call_soon_threadsafe(self._stop_event.set)
 
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, _signal_handler)
 
         try:
-            await stop_event.wait()
+            await self._stop_event.wait()
         finally:
             await self.stop()
