@@ -19,6 +19,7 @@ from typing import Any
 
 from ...actions.types import Action, ActionResult
 from ...drivers.base import BaseDriver, DriverError, DriverHealth
+from ...events.bus import EventBus
 from ...events.types import Event, EventType, SemanticEvent
 from .config import ChromiumConfig
 
@@ -92,15 +93,22 @@ class ChromiumDriver(BaseDriver):
 
     """
 
-    def __init__(self, config: ChromiumConfig) -> None:
+    def __init__(
+        self,
+        config: ChromiumConfig,
+        event_bus: EventBus | None = None,
+    ) -> None:
         """Initialize the Chromium driver.
 
         Args:
             config: Chromium-specific configuration parameters.
+            event_bus: Event bus to publish action/input events on.
+                If None, events are only yielded via ``observe()``.
 
         """
         super().__init__(name="chromium", driver_type="chromium")
         self.config = config
+        self._event_bus = event_bus
         self._playwright: Any = None
         self._browser: Any = None
         self._context: Any = None
@@ -194,6 +202,57 @@ class ChromiumDriver(BaseDriver):
         self._browser = None
         self._playwright = None
 
+    async def _publish(self, event: SemanticEvent) -> None:
+        """Publish an event to the bus (if available) and internal queue."""
+        self._event_queue.put_nowait(event)
+        if self._event_bus is not None:
+            await self._event_bus.publish(event)
+
+    async def _publish_action_result(
+        self,
+        action: Action,
+        result: ActionResult,
+    ) -> None:
+        if self._event_bus is None:
+            return
+        event_type = EventType.ACTION_COMPLETED if result.success else EventType.ACTION_FAILED
+        event = SemanticEvent.create(
+            type=event_type,
+            source="chromium",
+            payload={
+                "action_name": action.name,
+                "action_id": action.action_id,
+                "target": action.target,
+                "duration_ms": result.duration_ms,
+                "error": result.error,
+            },
+        )
+        await self._event_bus.publish(event)
+
+    def _publish_user_event(self, action: Action) -> None:
+        if self._event_bus is None:
+            return
+        if action.name in ("click", "type"):
+            event = SemanticEvent.create(
+                type=EventType.USER_INPUT,
+                source="chromium",
+                payload={
+                    "action_name": action.name,
+                    "action_id": action.action_id,
+                    "target": action.target,
+                },
+            )
+            asyncio.ensure_future(self._event_bus.publish(event))
+        elif action.name == "screenshot":
+            event = SemanticEvent.create(
+                type=EventType.SCREENSHOT_TAKEN,
+                source="chromium",
+                payload={
+                    "action_id": action.action_id,
+                },
+            )
+            asyncio.ensure_future(self._event_bus.publish(event))
+
     def _on_page_loaded(self) -> None:
         """Handle page load event from Playwright."""
         url = ""
@@ -214,6 +273,8 @@ class ChromiumDriver(BaseDriver):
             payload={"url": url, "title": title},
         )
         self._event_queue.put_nowait(event)
+        if self._event_bus is not None:
+            asyncio.ensure_future(self._event_bus.publish(event))
 
     def _on_page_error(self, error: Any) -> None:
         """Handle page error event from Playwright."""
@@ -223,6 +284,8 @@ class ChromiumDriver(BaseDriver):
             payload={"error": str(error)},
         )
         self._event_queue.put_nowait(event)
+        if self._event_bus is not None:
+            asyncio.ensure_future(self._event_bus.publish(event))
 
     async def observe(self) -> AsyncGenerator[Event, None]:  # type: ignore[override]
         """Yield events from the browser.
@@ -240,11 +303,13 @@ class ChromiumDriver(BaseDriver):
             except TimeoutError:
                 dom_changes = await self._poll_dom_changes()
                 if dom_changes is not None and _has_dom_changes(dom_changes):
-                    yield SemanticEvent.create(
+                    event = SemanticEvent.create(
                         type=EventType.DOM_CHANGED,
                         source="chromium",
                         payload=dom_changes,
                     )
+                    await self._publish(event)
+                    yield event
 
     async def _poll_dom_changes(self) -> dict[str, int] | None:
         """Poll the browser for accumulated DOM mutation summaries."""
@@ -284,21 +349,27 @@ class ChromiumDriver(BaseDriver):
 
         try:
             result_data = await self._execute_action(action)
-            duration_ms = (time.monotonic() - start) * 1000
-            return ActionResult(
-                action_id=action.action_id,
-                success=True,
-                data=result_data,
-                duration_ms=duration_ms,
-            )
         except (RuntimeError, OSError, TimeoutError, ValueError) as exc:
             duration_ms = (time.monotonic() - start) * 1000
-            return ActionResult(
+            result = ActionResult(
                 action_id=action.action_id,
                 success=False,
                 error=str(exc),
                 duration_ms=duration_ms,
             )
+            await self._publish_action_result(action, result)
+            return result
+        else:
+            duration_ms = (time.monotonic() - start) * 1000
+            result = ActionResult(
+                action_id=action.action_id,
+                success=True,
+                data=result_data,
+                duration_ms=duration_ms,
+            )
+            await self._publish_action_result(action, result)
+            self._publish_user_event(action)
+            return result
 
     async def _execute_action(self, action: Action) -> Any:
         """Dispatch a single action to the appropriate Playwright method."""

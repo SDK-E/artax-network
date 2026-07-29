@@ -29,7 +29,7 @@ export function useWebSocket({
   });
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
-  const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const connect = useCallback(() => {
     try {
@@ -60,7 +60,7 @@ export function useWebSocket({
 
         if (reconnectAttempts.current < maxReconnectAttempts) {
           reconnectAttempts.current += 1;
-          reconnectTimeout.current = setTimeout(connect, reconnectInterval);
+          reconnectTimeout.current = setTimeout(() => { connect(); }, reconnectInterval);
         }
       };
     } catch (err) {

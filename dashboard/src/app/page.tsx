@@ -1,9 +1,14 @@
+"use client";
+
+import { useDashboard } from "@/hooks/useDashboard";
 import { StatusBar } from "@/components/StatusBar";
 import { EventLog } from "@/components/EventLog";
 import { MemoryInspector } from "@/components/MemoryInspector";
 import { DriverStatus } from "@/components/DriverStatus";
 
 export default function DashboardPage() {
+  const { connection, events, snapshot } = useDashboard();
+
   return (
     <main className="min-h-screen p-6">
       <header className="mb-8">
@@ -15,14 +20,13 @@ export default function DashboardPage() {
         </p>
       </header>
 
-      <StatusBar status="disconnected" />
+      <StatusBar />
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatusCard title="Runtime" status="Not connected" />
-        <StatusCard title="Events" status="Not connected" />
-        <StatusCard title="Memory" status="Not connected" />
-        <StatusCard title="Scheduler" status="Not connected" />
-        <StatusCard title="Drivers" status="Not connected" />
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatusCard title="Runtime" status={connection.connected ? "Running" : "Stopped"} color="text-artax-green" />
+        <StatusCard title="Events" status={`${events.length}`} color="text-artax-blue-glow" />
+        <StatusCard title="Drivers" status={`${snapshot.driverCount}`} color="text-artax-green" />
+        <StatusCard title="Memory" status={`${snapshot.memoryKeys} keys`} color="text-artax-blue-glow" />
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -37,11 +41,11 @@ export default function DashboardPage() {
   );
 }
 
-function StatusCard({ title, status }: { title: string; status: string }) {
+function StatusCard({ title, status, color }: { title: string; status: string; color: string }) {
   return (
     <div className="rounded-lg border border-artax-border bg-artax-surface p-4">
       <h3 className="text-sm font-medium text-gray-400">{title}</h3>
-      <p className="mt-1 text-lg font-semibold text-artax-green">{status}</p>
+      <p className={`mt-1 text-lg font-semibold ${color}`}>{status}</p>
     </div>
   );
 }

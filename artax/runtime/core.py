@@ -13,10 +13,12 @@ import logging
 import signal
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
+from ..dashboard.config import DashboardConfig
 from ..drivers.base import Driver, DriverState
-from ..events.bus import MemoryEventBus
-from ..events.types import EventBusConfig, EventType, SemanticEvent
+from ..events.bus import EventBus, MemoryEventBus
+from ..events.types import EventBusConfig, EventFilter, EventType, SemanticEvent
 from ..memory.base import InMemoryStore, MemoryConfig, WorkingMemory
 from ..scheduler.core import MemoryScheduler, Scheduler, SchedulerConfig
 
@@ -45,6 +47,8 @@ class RuntimeConfig:
         event_bus: Event bus configuration.
         memory: Memory store configuration.
         scheduler: Scheduler configuration.
+        dashboard: Dashboard server configuration. If None, the
+            dashboard is not started.
 
     """
 
@@ -53,6 +57,7 @@ class RuntimeConfig:
     event_bus: EventBusConfig = field(default_factory=EventBusConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    dashboard: DashboardConfig | None = None
 
 
 @dataclass
@@ -93,20 +98,27 @@ class Runtime:
 
     """
 
-    def __init__(self, config: RuntimeConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: RuntimeConfig | None = None,
+        event_bus: EventBus | None = None,
+    ) -> None:
         """Initialize the Runtime.
 
         Args:
             config: Runtime configuration. Uses defaults if None.
+            event_bus: Event bus instance. Creates a MemoryEventBus if None.
 
         """
         self._config = config or RuntimeConfig()
         self._state = RuntimeState.STOPPED
         self._drivers: list[Driver] = []
         self._driver_names: dict[str, Driver] = {}
-        self._event_bus: MemoryEventBus | None = None
+        self._event_bus: EventBus | None = event_bus
         self._memory: WorkingMemory | None = None
         self._scheduler: Scheduler | None = None
+        self._dashboard: Any = None
+        self._dashboard_task: asyncio.Task[None] | None = None
         self._started_at: float = 0.0
         self._run_task: asyncio.Task[None] | None = None
         self._stop_event: asyncio.Event | None = None
@@ -117,7 +129,7 @@ class Runtime:
         return self._state
 
     @property
-    def event_bus(self) -> MemoryEventBus:
+    def event_bus(self) -> EventBus:
         """Return the event bus. Raises RuntimeError if not started."""
         if self._event_bus is None:
             msg = "EventBus not available: runtime not started"
@@ -173,6 +185,19 @@ class Runtime:
         self._memory = memory
         logger.info("Registered memory store: %s", type(memory).__name__)
 
+    def register_event_bus(self, event_bus: EventBus) -> None:
+        """Register an event bus with the runtime.
+
+        Only one event bus may be active at a time; subsequent calls replace
+        the previous event bus.
+
+        Args:
+            event_bus: An event bus instance.
+
+        """
+        self._event_bus = event_bus
+        logger.info("Registered event bus: %s", type(event_bus).__name__)
+
     def register_scheduler(self, scheduler: Scheduler) -> None:
         """Register a scheduler with the runtime.
 
@@ -185,6 +210,41 @@ class Runtime:
         """
         self._scheduler = scheduler
         logger.info("Registered scheduler: %s", type(scheduler).__name__)
+
+    async def _start_dashboard(self) -> None:
+        if self._config.dashboard is None:
+            return
+        cfg = self._config.dashboard
+        try:
+            from ..dashboard.server import DashboardServer
+
+            self._dashboard = DashboardServer(cfg)
+            await self._dashboard.start()
+            assert self._event_bus is not None
+            await self._event_bus.subscribe(
+                EventFilter(),
+                self._dashboard.receive_event,
+            )
+            logger.info("Dashboard started on ws://%s:%d", cfg.host, cfg.ws_port)
+        except Exception:
+            logger.exception("Dashboard failed to start")
+            self._dashboard = None
+
+    async def _stop_dashboard(self) -> None:
+        if self._dashboard is None:
+            return
+        try:
+            if self._dashboard_task is not None:
+                self._dashboard_task.cancel()
+            await asyncio.wait_for(
+                self._dashboard.stop(),
+                timeout=self._config.shutdown_timeout,
+            )
+        except (TimeoutError, asyncio.CancelledError):
+            logger.warning("Dashboard stop timed out or was cancelled")
+        self._dashboard = None
+        self._dashboard_task = None
+        logger.info("Dashboard stopped")
 
     def status(self) -> RuntimeStatus:
         """Return a point-in-time snapshot of runtime state."""
@@ -230,6 +290,7 @@ class Runtime:
             await self._start_event_bus()
             await self._start_memory()
             await self._start_scheduler()
+            await self._start_dashboard()
             await self._connect_drivers()
 
             self._state = RuntimeState.RUNNING
@@ -242,7 +303,8 @@ class Runtime:
             raise
 
     async def _start_event_bus(self) -> None:
-        self._event_bus = MemoryEventBus(config=self._config.event_bus)
+        if self._event_bus is None:
+            self._event_bus = MemoryEventBus(config=self._config.event_bus)
         await self._event_bus.start()
         logger.info("EventBus started")
 
@@ -303,6 +365,7 @@ class Runtime:
             await self._publish_event(EventType.RUNTIME_STOPPING)
             await self._disconnect_drivers()
             await self._stop_scheduler()
+            await self._stop_dashboard()
             await self._stop_memory()
             await self._stop_event_bus()
         except Exception:

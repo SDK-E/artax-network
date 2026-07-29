@@ -99,13 +99,20 @@ test-verbose: ## Run tests with verbose output
 .PHONY: dashboard dashboard-install dashboard-build
 
 dashboard: ## Start dashboard dev server
-	cd dashboard && npm run dev
+	cd dashboard && pnpm run dev
 
-dashboard-install: ## Install dashboard npm deps
-	cd dashboard && npm install
+dashboard-install: ## Install dashboard pnpm deps
+	cd dashboard && pnpm install
 
 dashboard-build: ## Build dashboard for production
-	cd dashboard && npm run build
+	cd dashboard && pnpm run build
+
+# -----------------------------------------------------------------------------
+# PNPM
+# -----------------------------------------------------------------------------
+
+approve-builds: ## Approve PNPM Builds
+	cd dashboard && pnpm approve-builds
 
 # -----------------------------------------------------------------------------
 # Docker
