@@ -61,6 +61,8 @@ ignore = [
     "SIM105", "SIM102",
     "A002", "UP042", "PLW0108", "RUF006",
     "TRY003", "EM101", "ARG002",
+    # Lazy imports are intentional for optional dependencies
+    "PLC0415",
 ]
 
 [tool.ruff.lint.per-file-ignores]
