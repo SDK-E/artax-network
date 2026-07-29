@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import logging
 import os
 import sys
@@ -11,6 +12,10 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from ..dashboard.config import DashboardConfig
+from ..events.types import EventBusConfig
+from ..memory.base import MemoryConfig
+from ..scheduler.core import SchedulerConfig
 from .core import Runtime, RuntimeConfig
 
 logger = logging.getLogger(__name__)
@@ -58,9 +63,21 @@ def _apply_env_overrides(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_runtime_config(toml_cfg: dict[str, Any]) -> RuntimeConfig:
-    rc = toml_cfg.get("runtime", {})
+    def _dc(key: str, cls: type) -> dict[str, Any]:
+        cfg = toml_cfg.get(key, {})
+        keys = {f.name for f in dataclasses.fields(cls)}
+        return {k: v for k, v in cfg.items() if k in keys}
+
+    dashboard: DashboardConfig | None = None
+    if "dashboard" in toml_cfg:
+        dashboard = DashboardConfig(**_dc("dashboard", DashboardConfig))
+
     return RuntimeConfig(
-        shutdown_timeout=rc.get("shutdown_timeout", 5.0),
+        shutdown_timeout=toml_cfg.get("runtime", {}).get("shutdown_timeout", 5.0),
+        event_bus=EventBusConfig(**_dc("event_bus", EventBusConfig)),
+        memory=MemoryConfig(**_dc("memory", MemoryConfig)),
+        scheduler=SchedulerConfig(**_dc("scheduler", SchedulerConfig)),
+        dashboard=dashboard,
     )
 
 
