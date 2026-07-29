@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
+import sqlite3
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
@@ -538,27 +541,74 @@ class InMemoryStore:
 class SQLiteMemoryStore:
     """Persistent working memory backed by SQLite.
 
-    Provides durable storage for single-machine deployments. Future work will
-    implement the full WorkingMemory protocol with WAL-mode concurrency and
-    automatic compaction.
+    Provides durable storage for single-machine deployments using stdlib
+    sqlite3 with WAL mode and asyncio.to_thread for non-blocking I/O.
+
+    Args:
+        config: Backend configuration. Uses defaults if None.
+        event_bus: Optional event bus for emitting memory events.
+
     """
 
-    def __init__(self, db_path: str = "artax_memory.db") -> None:
+    def __init__(
+        self,
+        config: MemoryConfig | None = None,
+        event_bus: Any | None = None,
+    ) -> None:
         """Initialize the SQLite memory store.
 
         Args:
-            db_path: Filesystem path to the SQLite database file.
+            config: Backend configuration. Uses defaults if None.
+            event_bus: Optional event bus for emitting memory events.
 
         """
-        self._db_path = db_path
+        self._config = config or MemoryConfig()
+        self._event_bus = event_bus
+        self._conn: sqlite3.Connection | None = None
+        self._lock = threading.Lock()
+        self._cleanup_task: asyncio.Task[None] | None = None
+        self._running = False
 
     async def start(self) -> None:
-        """Initialize the SQLite connection."""
-        raise NotImplementedError
+        """Initialize the SQLite connection and create table."""
+        self._conn = await asyncio.to_thread(
+            sqlite3.connect, self._config.sqlite_path, check_same_thread=False
+        )
+        self._conn.row_factory = sqlite3.Row
+        await asyncio.to_thread(self._conn.execute, "PRAGMA journal_mode=WAL")
+        await asyncio.to_thread(self._conn.execute, "PRAGMA synchronous=NORMAL")
+        await asyncio.to_thread(
+            self._conn.execute,
+            """
+            CREATE TABLE IF NOT EXISTS memory_entries (
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                accessed_at REAL NOT NULL,
+                ttl REAL,
+                PRIMARY KEY (namespace, key)
+            )
+            """,
+        )
+        await asyncio.to_thread(self._conn.commit)
+        self._running = True
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
     async def stop(self) -> None:
-        """Close the SQLite connection."""
-        raise NotImplementedError
+        """Stop the cleanup task and close the connection."""
+        self._running = False
+        if self._cleanup_task is not None:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_task = None
+        if self._conn is not None:
+            await asyncio.to_thread(self._conn.close)
+            self._conn = None
 
     async def store(
         self,
@@ -567,40 +617,414 @@ class SQLiteMemoryStore:
         namespace: str = "default",
         ttl: float | None = None,
     ) -> None:
-        """Store a value under the given key."""
-        raise NotImplementedError
+        """Store a value under a key with optional TTL.
+
+        If the namespace is at capacity, the least-recently-accessed entry
+        is evicted. Emits a MEMORY_UPDATED event for new keys.
+        """
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
+
+        now = time.monotonic()
+        expiry = now + ttl if ttl is not None else None
+        serialized = json.dumps(value, default=str)
+
+        def _do_store() -> tuple[bool, str | None]:
+            with self._lock:
+                cur = conn.execute(
+                    "SELECT 1 FROM memory_entries WHERE namespace=? AND key=?",
+                    (namespace, key),
+                )
+                is_new = cur.fetchone() is None
+                evicted_key: str | None = None
+
+                if is_new:
+                    cur = conn.execute(
+                        "SELECT COUNT(*) FROM memory_entries WHERE namespace=?",
+                        (namespace,),
+                    )
+                    count = cur.fetchone()[0]
+                    if count >= self._config.max_entries:
+                        cur = conn.execute(
+                            """SELECT key FROM memory_entries
+                               WHERE namespace=? ORDER BY accessed_at ASC LIMIT 1""",
+                            (namespace,),
+                        )
+                        row = cur.fetchone()
+                        if row is not None:
+                            evicted_key = row["key"]
+                            conn.execute(
+                                "DELETE FROM memory_entries WHERE namespace=? AND key=?",
+                                (namespace, evicted_key),
+                            )
+                            logger.debug(
+                                "Evicted LRU entry %s/%s (capacity %d)",
+                                namespace,
+                                evicted_key,
+                                self._config.max_entries,
+                            )
+
+                conn.execute(
+                    """INSERT INTO memory_entries
+                       (namespace, key, value, created_at, updated_at, accessed_at, ttl)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(namespace, key) DO UPDATE SET
+                           value=excluded.value,
+                           updated_at=excluded.updated_at,
+                           accessed_at=excluded.updated_at,
+                           ttl=excluded.ttl""",
+                    (namespace, key, serialized, now, now, now, expiry),
+                )
+                conn.commit()
+                return is_new, evicted_key
+
+        is_new, evicted_key = await asyncio.to_thread(_do_store)
+
+        if evicted_key is not None:
+            await self._emit_event(
+                "memory_evicted",
+                {
+                    "key": evicted_key,
+                    "namespace": namespace,
+                    "reason": "capacity",
+                },
+            )
+
+        if is_new:
+            await self._emit_event(
+                "memory_updated",
+                {"key": key, "namespace": namespace, "operation": "store"},
+            )
 
     async def retrieve(self, key: str, namespace: str = "default") -> Any | None:
-        """Retrieve a value by key."""
-        raise NotImplementedError
+        """Retrieve a value by key.
+
+        Performs lazy TTL enforcement: if the entry is expired it is deleted
+        and None is returned. Access updates the LRU position.
+        """
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
+
+        def _do_retrieve() -> tuple[Any, bool] | None:
+            with self._lock:
+                cur = conn.execute(
+                    "SELECT value, ttl FROM memory_entries WHERE namespace=? AND key=?",
+                    (namespace, key),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+
+                now = time.monotonic()
+                ttl = row["ttl"]
+                if ttl is not None and now > ttl:
+                    conn.execute(
+                        "DELETE FROM memory_entries WHERE namespace=? AND key=?",
+                        (namespace, key),
+                    )
+                    conn.commit()
+                    return None
+
+                conn.execute(
+                    "UPDATE memory_entries SET accessed_at=? WHERE namespace=? AND key=?",
+                    (now, namespace, key),
+                )
+                conn.commit()
+                return json.loads(row["value"]), True
+
+        result = await asyncio.to_thread(_do_retrieve)
+        if result is None:
+            return None
+        return result[0]
 
     async def delete(self, key: str, namespace: str = "default") -> bool:
-        """Delete a key."""
-        raise NotImplementedError
+        """Delete a key. Returns True if the key existed."""
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
 
-    async def query(self, filter: MemoryFilter) -> dict[str, Any]:
-        """Query entries matching the filter."""
-        raise NotImplementedError
+        def _do_delete() -> bool:
+            with self._lock:
+                cur = conn.execute(
+                    "SELECT 1 FROM memory_entries WHERE namespace=? AND key=?",
+                    (namespace, key),
+                )
+                if cur.fetchone() is None:
+                    return False
+                conn.execute(
+                    "DELETE FROM memory_entries WHERE namespace=? AND key=?",
+                    (namespace, key),
+                )
+                conn.commit()
+                return True
+
+        return await asyncio.to_thread(_do_delete)
+
+    async def query(self, filter: MemoryFilter) -> dict[str, Any]:  # noqa: C901
+        """Query entries matching the filter criteria.
+
+        Builds a SQL WHERE clause from filter fields, then applies
+        value_type and predicate filtering in Python when needed.
+        """
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
+
+        can_use_sql_limit = filter.value_type is None and filter.predicate is None
+
+        def _build_where() -> tuple[str, list[Any]]:
+            clauses: list[str] = []
+            params: list[Any] = []
+            if filter.namespace is not None:
+                clauses.append("namespace = ?")
+                params.append(filter.namespace)
+            if filter.key_prefix is not None:
+                clauses.append("key LIKE ?")
+                params.append(filter.key_prefix + "%")
+            if filter.after is not None:
+                clauses.append("created_at > ?")
+                params.append(filter.after)
+            where = " WHERE " + " AND ".join(clauses) if clauses else ""
+            return where, params
+
+        def _row_matches(row: sqlite3.Row, val: Any) -> bool:
+            if filter.value_type is not None and not isinstance(val, filter.value_type):
+                return False
+            if filter.predicate is not None:
+                ttl = row["ttl"]
+                entry = MemoryEntry(
+                    key=row["key"],
+                    value=val,
+                    namespace=row["namespace"],
+                    created_at=0.0,
+                    updated_at=0.0,
+                    ttl=ttl,
+                )
+                pred_result = filter.predicate(entry)
+                if inspect.isawaitable(pred_result):
+                    raise RuntimeError("Async predicates not supported in SQLite query")
+                if not pred_result:
+                    return False
+            return True
+
+        def _do_query() -> list[dict[str, Any]]:
+            with self._lock:
+                where, params = _build_where()
+                limit_clause = ""
+                if filter.limit is not None and can_use_sql_limit:
+                    limit_clause = f" LIMIT {filter.limit}"
+
+                sql = "SELECT namespace, key, value, ttl FROM memory_entries" + where + limit_clause  # noqa: S608
+                cur = conn.execute(sql, params)
+
+                now = time.monotonic()
+                results: list[dict[str, Any]] = []
+                for row in cur.fetchall():
+                    ttl = row["ttl"]
+                    if ttl is not None and now > ttl:
+                        conn.execute(
+                            "DELETE FROM memory_entries WHERE namespace=? AND key=?",
+                            (row["namespace"], row["key"]),
+                        )
+                        conn.commit()
+                        continue
+                    val = json.loads(row["value"])
+                    if not _row_matches(row, val):
+                        continue
+                    results.append({"key": row["key"], "value": val})
+                    if filter.limit is not None and len(results) >= filter.limit:
+                        break
+                return results
+
+        rows = await asyncio.to_thread(_do_query)
+        return {r["key"]: r["value"] for r in rows}
 
     async def clear(self, namespace: str | None = None) -> int:
-        """Remove all entries."""
-        raise NotImplementedError
+        """Clear entries. Returns the number of entries removed."""
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
+
+        def _do_clear() -> int:
+            with self._lock:
+                if namespace is not None:
+                    cur = conn.execute(
+                        "SELECT COUNT(*) FROM memory_entries WHERE namespace=?",
+                        (namespace,),
+                    )
+                    row = cur.fetchone()
+                    count: int = row[0] if row is not None else 0
+                    conn.execute(
+                        "DELETE FROM memory_entries WHERE namespace=?",
+                        (namespace,),
+                    )
+                else:
+                    cur = conn.execute("SELECT COUNT(*) FROM memory_entries")
+                    row = cur.fetchone()
+                    count = row[0] if row is not None else 0
+                    conn.execute("DELETE FROM memory_entries")
+                conn.commit()
+                return count
+
+        count = await asyncio.to_thread(_do_clear)
+
+        if count > 0:
+            await self._emit_event(
+                "memory_updated",
+                {
+                    "namespace": namespace,
+                    "operation": "clear",
+                    "count": count,
+                },
+            )
+
+        return count
 
     async def keys(self, namespace: str = "default") -> list[str]:
-        """List keys in a namespace."""
-        raise NotImplementedError
+        """List all keys in a namespace."""
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
+
+        def _do_keys() -> list[str]:
+            with self._lock:
+                cur = conn.execute(
+                    "SELECT key FROM memory_entries WHERE namespace=?",
+                    (namespace,),
+                )
+                return [row["key"] for row in cur.fetchall()]
+
+        return await asyncio.to_thread(_do_keys)
 
     async def size(self, namespace: str | None = None) -> int:
-        """Return the number of entries."""
-        raise NotImplementedError
+        """Return the number of entries stored."""
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
+
+        def _do_size() -> int:
+            with self._lock:
+                if namespace is not None:
+                    cur = conn.execute(
+                        "SELECT COUNT(*) FROM memory_entries WHERE namespace=?",
+                        (namespace,),
+                    )
+                else:
+                    cur = conn.execute("SELECT COUNT(*) FROM memory_entries")
+                row = cur.fetchone()
+                return row[0] if row is not None else 0
+
+        return await asyncio.to_thread(_do_size)
 
     async def snapshot(self) -> MemorySnapshot:
-        """Capture a snapshot of all entries."""
-        raise NotImplementedError
+        """Capture a point-in-time snapshot of all entries."""
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
+
+        def _do_snapshot() -> MemorySnapshot:
+            with self._lock:
+                cur = conn.execute(
+                    "SELECT namespace, key, value, created_at, updated_at, ttl FROM memory_entries",
+                )
+                entries: dict[str, dict[str, Any]] = {}
+                for row in cur.fetchall():
+                    ns = row["namespace"]
+                    if ns not in entries:
+                        entries[ns] = {}
+                    entries[ns][row["key"]] = {
+                        "key": row["key"],
+                        "value": json.loads(row["value"]),
+                        "namespace": ns,
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "ttl": row["ttl"],
+                    }
+            return MemorySnapshot(
+                version="0.1",
+                timestamp=time.monotonic(),
+                entries=entries,
+            )
+
+        return await asyncio.to_thread(_do_snapshot)
 
     async def restore(self, snapshot: MemorySnapshot) -> None:
-        """Restore from a snapshot."""
-        raise NotImplementedError
+        """Replace current state from a snapshot."""
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("SQLiteMemoryStore not started")
+
+        def _do_restore() -> None:
+            with self._lock:
+                conn.execute("DELETE FROM memory_entries")
+                now = time.monotonic()
+                for ns_name, ns_entries in snapshot.entries.items():
+                    for key, data in ns_entries.items():
+                        val = data.get("value")
+                        conn.execute(
+                            """INSERT INTO memory_entries
+                               (namespace, key, value, created_at, updated_at, accessed_at, ttl)
+                               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                            (
+                                ns_name,
+                                key,
+                                json.dumps(val, default=str),
+                                data.get("created_at", now),
+                                data.get("updated_at", now),
+                                now,
+                                data.get("ttl"),
+                            ),
+                        )
+                conn.commit()
+
+        await asyncio.to_thread(_do_restore)
+
+    async def _cleanup_loop(self) -> None:
+        """Periodically sweep and remove expired entries."""
+        conn = self._conn
+        if conn is None:
+            return
+        try:
+            while self._running:
+                await asyncio.sleep(self._config.cleanup_interval)
+                if not self._running or conn is None:
+                    break
+
+                def _do_cleanup() -> int:
+                    with self._lock:
+                        now = time.monotonic()
+                        cur = conn.execute(
+                            "DELETE FROM memory_entries WHERE ttl IS NOT NULL AND ttl < ?",
+                            (now,),
+                        )
+                        conn.commit()
+                        return cur.rowcount
+
+                removed = await asyncio.to_thread(_do_cleanup)
+                if removed > 0:
+                    logger.debug("TTL cleanup removed %d expired entries", removed)
+                    await self._emit_event(
+                        "memory_cleanup",
+                        {"removed": removed},
+                    )
+        except asyncio.CancelledError:
+            return
+
+    async def _emit_event(self, operation: str, payload: dict[str, Any]) -> None:
+        """Publish a memory event if an event bus is connected."""
+        if self._event_bus is None:
+            return
+        try:
+            event = SemanticEvent.create(
+                type=EventType.MEMORY_UPDATED,
+                source="memory",
+                payload={"event": operation, **payload},
+            )
+            await self._event_bus.publish(event)
+        except Exception:
+            logger.exception("Failed to emit memory event: %s", operation)
 
 
 class RedisMemoryStore:
