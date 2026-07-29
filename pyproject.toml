@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Event-driven runtime for embodied AI"
 requires-python = ">=3.12"
 license = {text = "MIT"}
-authors = [{name = "Artax Contributors"}]
+authors = [{name = "Hicham SADDEK", email = "hicham@sdk.enterprises"}]
 readme = "README.md"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -22,11 +22,11 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/artax-network/artax-network"
+Homepage = "https://github.com/sdk-e/artax-network"
 Documentation = "https://artax-network.readthedocs.io"
-Repository = "https://github.com/artax-network/artax-network"
-Issues = "https://github.com/artax-network/artax-network/issues"
-Changelog = "https://github.com/artax-network/artax-network/blob/main/CHANGELOG.md"
+Repository = "https://github.com/sdk-e/artax-network"
+Issues = "https://github.com/sdk-e/artax-network/issues"
+Changelog = "https://github.com/sdk-e/artax-network/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

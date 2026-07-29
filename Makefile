@@ -39,6 +39,7 @@ install-all: venv ## Install with all optional deps (chromium, dashboard)
 
 dev: install hooks ## Full dev setup (venv + install + hooks)
 	@echo "Ready — activate with: source $(VENV)/bin/activate"
+	artax
 
 hooks: ## Install git pre-commit + pre-push hooks
 	"$(VENV_BIN)/pre-commit" install

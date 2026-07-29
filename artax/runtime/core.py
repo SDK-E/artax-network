@@ -19,7 +19,7 @@ from ..dashboard.config import DashboardConfig
 from ..drivers.base import Driver, DriverState
 from ..events.bus import EventBus, MemoryEventBus
 from ..events.types import EventBusConfig, EventFilter, EventType, SemanticEvent
-from ..memory.base import InMemoryStore, MemoryConfig, WorkingMemory
+from ..memory.base import InMemoryStore, MemoryConfig, SQLiteMemoryStore, WorkingMemory
 from ..scheduler.core import MemoryScheduler, Scheduler, SchedulerConfig
 
 logger = logging.getLogger(__name__)
@@ -310,10 +310,11 @@ class Runtime:
 
     async def _start_memory(self) -> None:
         assert self._event_bus is not None
-        memory = InMemoryStore(config=self._config.memory, event_bus=self._event_bus)
+        backend_cls = {"sqlite": SQLiteMemoryStore}.get(self._config.memory.backend, InMemoryStore)
+        memory = backend_cls(config=self._config.memory, event_bus=self._event_bus)
         await memory.start()
         self._memory = memory
-        logger.info("Memory started")
+        logger.info("Memory started (backend=%s)", self._config.memory.backend)
 
     async def _start_scheduler(self) -> None:
         assert self._event_bus is not None
