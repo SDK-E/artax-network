@@ -7,7 +7,6 @@ import time
 import pytest
 
 from artax.actions.types import Action, ActionResult, Intent
-from artax.scheduler.core import Priority
 
 
 class TestAction:
@@ -76,16 +75,16 @@ class TestIntent:
         intent = Intent(
             description="Login flow",
             actions=[a1, a2],
-            priority=Priority.HIGH,
+            priority="high",
         )
         assert intent.description == "Login flow"
         assert len(intent.actions) == 2
-        assert intent.priority == Priority.HIGH
+        assert intent.priority == "high"
 
     def test_defaults(self) -> None:
         intent = Intent(description="test")
         assert intent.actions == []
-        assert intent.priority == Priority.MEDIUM
+        assert intent.priority == "medium"
 
     def test_timestamp_is_monotonic(self) -> None:
         t0 = time.monotonic()

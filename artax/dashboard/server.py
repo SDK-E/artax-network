@@ -21,7 +21,7 @@ from .config import DashboardConfig
 logger = logging.getLogger(__name__)
 
 try:
-    import websockets  # type: ignore[import-not-found]
+    import websockets
 except ImportError:
     websockets = None
 
@@ -94,7 +94,7 @@ class DashboardServer:
             from ..drivers.base import DriverError
 
             msg = "websockets not installed. Install with: pip install websockets"
-            raise DriverError("dashboard", msg, recoverable=False)
+            raise DriverError(msg)
 
         self._ws_server = await self._start_ws_server()
         self._running = True
@@ -211,7 +211,7 @@ class DashboardServer:
             # Keep connection alive, listen for close
             async for _ in ws:
                 pass
-        except (RuntimeError, OSError):
+        except (RuntimeError, OSError, websockets.ConnectionClosed):
             pass
         finally:
             self._remove_client(ws)
@@ -230,9 +230,8 @@ class DashboardServer:
         disconnected: list[Any] = []
         for client in self._clients:
             try:
-                if client.open:
-                    await client.send(data)
-            except (RuntimeError, OSError):
+                await client.send(data)
+            except (RuntimeError, OSError, websockets.ConnectionClosed):
                 disconnected.append(client)
 
         for client in disconnected:

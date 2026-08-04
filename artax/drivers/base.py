@@ -11,11 +11,12 @@ from __future__ import annotations
 import enum
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 
 from ..actions.types import Action, ActionResult
+from ..events.bus import EventBus
 from ..events.types import Event
 
 logger = logging.getLogger(__name__)
@@ -54,42 +55,17 @@ class DriverHealth:
 class DriverError(Exception):
     """Base exception for driver errors."""
 
-    def __init__(self, driver: str, message: str, *, recoverable: bool = True) -> None:
-        """Initialize driver error.
-
-        Args:
-            driver: Name of the driver that raised the error.
-            message: Human-readable error description.
-            recoverable: Whether the driver can recover without reconnection.
-
-        """
-        self.driver = driver
-        self.recoverable = recoverable
-        super().__init__(f"[{driver}] {message}")
-
 
 class DriverConnectionError(DriverError):
     """Driver failed to connect."""
-
-    def __init__(self, driver: str, message: str) -> None:
-        """Initialize connection error (always irrecoverable)."""
-        super().__init__(driver, message, recoverable=False)
 
 
 class DriverTimeoutError(DriverError):
     """Driver operation timed out."""
 
-    def __init__(self, driver: str, message: str) -> None:
-        """Initialize timeout error (recoverable)."""
-        super().__init__(driver, message, recoverable=True)
-
 
 class DriverActionError(DriverError):
     """Driver action execution failed."""
-
-    def __init__(self, driver: str, message: str) -> None:
-        """Initialize action error (recoverable)."""
-        super().__init__(driver, message, recoverable=True)
 
 
 class DriverConfig(Protocol):
@@ -120,11 +96,16 @@ class Driver(Protocol):
         ...
 
     @property
-    def state(self) -> DriverState:
-        """Current lifecycle state."""
+    def environment(self) -> str:
+        """Identifier for the driver implementation (e.g., 'chromium', 'terminal')."""
         ...
 
-    async def connect(self) -> None:
+    @property
+    def is_connected(self) -> bool:
+        """Whether the driver is currently connected."""
+        ...
+
+    async def connect(self, event_bus: EventBus) -> None:
         """Connect to the environment. Raise DriverError on failure."""
         ...
 
@@ -132,7 +113,7 @@ class Driver(Protocol):
         """Disconnect from the environment. Clean up resources."""
         ...
 
-    async def observe(self) -> AsyncGenerator[Event, None]:
+    async def observe(self) -> AsyncIterator[Event]:
         """Yield events from the environment. Runs continuously while connected."""
         ...
 
@@ -152,17 +133,18 @@ class BaseDriver(ABC):
     The base class manages state transitions, error counting, and health checks.
     """
 
-    def __init__(self, name: str, driver_type: str) -> None:
+    def __init__(self, name: str, config: DriverConfig) -> None:
         """Initialize the base driver.
 
         Args:
             name: Unique name for this driver instance.
-            driver_type: Identifier for the driver implementation.
+            config: Driver configuration satisfying the DriverConfig protocol.
 
         """
         self._name = name
-        self._driver_type = driver_type
+        self._config = config
         self._state = DriverState.DISCONNECTED
+        self._event_bus: EventBus | None = None
         self._error_count = 0
         self._last_event_at: float | None = None
 
@@ -172,9 +154,14 @@ class BaseDriver(ABC):
         return self._name
 
     @property
-    def driver_type(self) -> str:
+    def environment(self) -> str:
         """Return the driver type identifier."""
-        return self._driver_type
+        return self._config.driver_type
+
+    @property
+    def is_connected(self) -> bool:
+        """Return whether the driver is currently connected."""
+        return self._state == DriverState.CONNECTED
 
     @property
     def state(self) -> DriverState:
@@ -186,9 +173,10 @@ class BaseDriver(ABC):
         """Return the cumulative error count since last connect."""
         return self._error_count
 
-    async def connect(self) -> None:
+    async def connect(self, event_bus: EventBus) -> None:
         """Connect to the environment. Manages state transitions."""
         self._state = DriverState.CONNECTING
+        self._event_bus = event_bus
         try:
             await self._do_connect()
             self._state = DriverState.CONNECTED
@@ -208,10 +196,11 @@ class BaseDriver(ABC):
             return
         try:
             await self._do_disconnect()
-        except Exception as exc:  # noqa: BLE001 — disconnect must always succeed
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Driver '%s' disconnect error: %s", self._name, exc)
         finally:
             self._state = DriverState.DISCONNECTED
+            self._event_bus = None
             logger.info("Driver '%s' disconnected", self._name)
 
     async def health_check(self) -> DriverHealth:
@@ -222,15 +211,10 @@ class BaseDriver(ABC):
             last_event_at=self._last_event_at,
         )
 
-    async def _publish_event(self, event: Event, bus: object | None = None) -> None:
-        """Publish an event to the bus if available.
-
-        Subclasses that receive an EventBus at connect time should store it
-        and pass it here.
-        """
-        if bus is not None and hasattr(bus, "publish"):
-            publish = bus.publish
-            await publish(event)
+    async def _publish_event(self, event: Event) -> None:
+        """Publish an event to the bus if connected."""
+        if self._event_bus is not None:
+            await self._event_bus.publish(event)
 
     @abstractmethod
     async def _do_connect(self) -> None:
@@ -243,7 +227,7 @@ class BaseDriver(ABC):
         ...
 
     @abstractmethod
-    async def observe(self) -> AsyncGenerator[Event, None]:
+    async def observe(self) -> AsyncIterator[Event]:
         """Yield events from the environment."""
         ...
 

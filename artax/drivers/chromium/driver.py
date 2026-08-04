@@ -14,7 +14,7 @@ import asyncio
 import base64
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 from typing import Any
 
 from ...actions.types import Action, ActionResult
@@ -67,7 +67,7 @@ async def _get_playwright() -> Any:
 
     """
     try:
-        from playwright.async_api import (  # type: ignore[import-not-found]
+        from playwright.async_api import (
             async_playwright,
         )
     except ImportError as exc:
@@ -75,7 +75,6 @@ async def _get_playwright() -> Any:
             "chromium",
             "Playwright not installed. "
             "Install with: pip install playwright && playwright install chromium",
-            recoverable=False,
         ) from exc
 
     return await async_playwright().start()
@@ -106,7 +105,7 @@ class ChromiumDriver(BaseDriver):
                 If None, events are only yielded via ``observe()``.
 
         """
-        super().__init__(name="chromium", driver_type="chromium")
+        super().__init__(name="chromium", config=config)
         self.config = config
         self._event_bus = event_bus
         self._playwright: Any = None
@@ -287,7 +286,7 @@ class ChromiumDriver(BaseDriver):
         if self._event_bus is not None:
             asyncio.ensure_future(self._event_bus.publish(event))
 
-    async def observe(self) -> AsyncGenerator[Event, None]:  # type: ignore[override]
+    async def observe(self) -> AsyncIterator[Event]:  # type: ignore[override,misc]
         """Yield events from the browser.
 
         Emits PAGE_LOADED, PAGE_ERROR, DOM_CHANGED events as they occur.

@@ -1,18 +1,9 @@
-"""Action type definitions for the Artax runtime.
-
-Actions represent commands issued to drivers. Each action has a free-form name,
-optional target, parameters, and timestamp. Results carry success status, output
-data, and error information.
-"""
-
 from __future__ import annotations
 
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
-
-from ..scheduler.core import Priority
 
 
 @dataclass(frozen=True)
@@ -68,4 +59,4 @@ class Intent:
 
     description: str
     actions: list[Action] = field(default_factory=list)
-    priority: Priority = Priority.MEDIUM
+    priority: str = "medium"

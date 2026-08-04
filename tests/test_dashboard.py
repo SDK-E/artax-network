@@ -10,8 +10,11 @@ import json
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from artax.dashboard.config import DashboardConfig
 from artax.dashboard.server import DashboardServer
+from artax.drivers.base import DriverError
 from artax.events.types import EventType, SemanticEvent
 
 
@@ -173,7 +176,6 @@ class TestDashboardEventReception:
         server = DashboardServer(config=config)
 
         mock_ws = AsyncMock()
-        mock_ws.open = True
         server._clients.add(mock_ws)
 
         event = SemanticEvent.create(
@@ -193,7 +195,6 @@ class TestDashboardEventReception:
         server = DashboardServer(config=config)
 
         mock_ws = AsyncMock()
-        mock_ws.open = True
         mock_ws.send.side_effect = OSError("Connection reset")
         server._clients.add(mock_ws)
 
@@ -326,3 +327,81 @@ class TestDashboardWebSocketIntegration:
         await server.stop()
         mock_ws_server.close.assert_called_once()
         assert server.running is False
+
+
+# ---------------------------------------------------------------------------
+# Error Paths
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardErrorPaths:
+    """Error handling paths in DashboardServer."""
+
+    async def test_start_raises_when_websockets_missing(self) -> None:
+        """Start raises DriverError when websockets is not installed."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        with (
+            patch("artax.dashboard.server.websockets", None),
+            pytest.raises(DriverError, match="websockets not installed"),
+        ):
+            await server.start()
+
+    async def test_stop_closes_all_client_connections(self) -> None:
+        """Stop closes all connected client sockets."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        mock_ws = AsyncMock()
+        server._clients.add(mock_ws)
+        server._running = True
+
+        await server.stop()
+        mock_ws.close.assert_awaited_once()
+        assert server.client_count == 0
+
+    async def test_stop_handles_client_close_error(self) -> None:
+        """Stop handles errors when closing client connections."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        mock_ws = AsyncMock()
+        mock_ws.close.side_effect = OSError("Connection reset")
+        server._clients.add(mock_ws)
+        server._running = True
+
+        await server.stop()
+        assert server.client_count == 0
+
+    async def test_handle_client_sends_history_on_connect(self) -> None:
+        """Handle client sends event history when a client connects."""
+        config = DashboardConfig(event_history_size=10)
+        server = DashboardServer(config=config)
+
+        event = SemanticEvent.create(
+            type=EventType.PAGE_LOADED,
+            source="chromium",
+            payload={"url": "https://example.com"},
+        )
+        await server.receive_event(event)
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = MagicMock(return_value=_EmptyAsyncIterator())
+        await server._handle_client(mock_ws)
+
+        mock_ws.send.assert_awaited()
+        sent_data = json.loads(mock_ws.send.call_args[0][0])
+        assert sent_data["type"] == "history"
+        assert len(sent_data["events"]) == 1
+
+    async def test_handle_client_handles_disconnect_gracefully(self) -> None:
+        """Handle client handles disconnect without error."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = MagicMock(side_effect=OSError("Connection reset"))
+
+        await server._handle_client(mock_ws)
+        assert server.client_count == 0

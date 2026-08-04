@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..dashboard.config import DashboardConfig
-from ..drivers.base import Driver, DriverState
+from ..drivers.base import Driver
 from ..events.bus import EventBus, MemoryEventBus
 from ..events.types import EventBusConfig, EventFilter, EventType, SemanticEvent
 from ..memory.base import InMemoryStore, MemoryConfig, SQLiteMemoryStore, WorkingMemory
@@ -47,8 +47,8 @@ class RuntimeConfig:
         event_bus: Event bus configuration.
         memory: Memory store configuration.
         scheduler: Scheduler configuration.
-        dashboard: Dashboard server configuration. If None, the
-            dashboard is not started.
+        dashboard: Dashboard server configuration. Defaults to a basic
+            configuration when not explicitly provided.
 
     """
 
@@ -57,7 +57,7 @@ class RuntimeConfig:
     event_bus: EventBusConfig = field(default_factory=EventBusConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-    dashboard: DashboardConfig | None = None
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
 
 @dataclass
@@ -212,8 +212,6 @@ class Runtime:
         logger.info("Registered scheduler: %s", type(scheduler).__name__)
 
     async def _start_dashboard(self) -> None:
-        if self._config.dashboard is None:
-            return
         cfg = self._config.dashboard
         try:
             from ..dashboard.server import DashboardServer
@@ -260,7 +258,7 @@ class Runtime:
             events_published = bus_stats.events_published
 
         for driver in self._drivers:
-            if driver.state == DriverState.CONNECTED:
+            if driver.is_connected:
                 drivers_connected += 1
 
         return RuntimeStatus(
@@ -330,7 +328,7 @@ class Runtime:
         for driver in self._drivers:
             try:
                 self._state = RuntimeState.STARTING
-                await driver.connect()
+                await driver.connect(self._event_bus)
                 event = SemanticEvent.create(
                     type=EventType.DRIVER_CONNECTED,
                     source="runtime",

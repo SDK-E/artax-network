@@ -34,6 +34,54 @@ Never rush into writing code.
 
 ---
 
+# Workflow Enforcement
+
+The workflow below is mechanically enforced. No code changes are committed without completing each step.
+
+## Required Plan File
+
+Before implementing any non-trivial change, a plan file must exist at `.kilo/plan.md` with:
+
+1. **What** is changing (file paths, what is modified/created)
+2. **Why** it is changing (reference to PRD, task spec, or anomaly)
+3. **How** it will be implemented (approach, not code)
+4. **What could go wrong** (anomalies, edge cases, failure modes)
+
+The plan must be read and acknowledged before implementation begins.
+
+## Required Quality Gates
+
+Every change must pass all of these before being considered done:
+
+1. `make lint` — zero lint errors
+2. `make typecheck` — zero type errors
+3. `make test` — all tests pass, zero failures
+4. Coverage for changed files must not decrease
+
+## Required Test Quality
+
+Tests must cover:
+
+- Happy path behavior
+- Anomaly paths (errors, timeouts, missing resources, invalid inputs)
+- Edge cases (empty inputs, boundary values, concurrent access)
+- State transitions (connecting → connected → disconnecting → disconnected)
+
+Tests that only verify happy paths are insufficient. Tests that do not assert behavior are not tests.
+
+## Pre-Commit Checklist
+
+Before committing, verify:
+
+- [ ] Plan file exists and was followed
+- [ ] `make lint` passes
+- [ ] `make typecheck` passes
+- [ ] `make test` passes
+- [ ] Coverage for changed files is not degraded
+- [ ] No new warnings introduced
+
+---
+
 # Always Follow a Workflow
 
 Do not skip steps.

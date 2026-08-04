@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import enum
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncIterator
 from typing import assert_type
 
 import pytest
@@ -20,6 +20,7 @@ from artax.drivers.base import (
     DriverState,
     DriverTimeoutError,
 )
+from artax.events.bus import MemoryEventBus
 from artax.events.types import Event, EventType, SemanticEvent
 
 # ---------------------------------------------------------------------------
@@ -31,14 +32,25 @@ def _make_event(source: str = "test") -> SemanticEvent:
     return SemanticEvent.create(type=EventType.CUSTOM, source=source, payload={})
 
 
-async def _empty_events() -> AsyncGenerator[Event, None]:
-    """Empty async iterator for test stubs."""
+async def _empty_events() -> AsyncIterator[Event]:
     return
     yield  # pragma: no cover
 
 
+class StubConfig:
+    """Minimal config satisfying DriverConfig protocol."""
+
+    @property
+    def driver_type(self) -> str:
+        return "test"
+
+
 class StubDriver(BaseDriver):
     """Minimal concrete driver for testing BaseDriver ABC."""
+
+    def __init__(self, name: str) -> None:
+        """Initialize the stub driver."""
+        super().__init__(name=name, config=StubConfig())
 
     async def _do_connect(self) -> None:
         pass
@@ -56,6 +68,10 @@ class StubDriver(BaseDriver):
 class FailingConnectDriver(BaseDriver):
     """Driver whose _do_connect raises."""
 
+    def __init__(self, name: str) -> None:
+        """Initialize the failing connect driver."""
+        super().__init__(name=name, config=StubConfig())
+
     async def _do_connect(self) -> None:
         raise DriverConnectionError("stub", "cannot connect")
 
@@ -72,6 +88,10 @@ class FailingConnectDriver(BaseDriver):
 class FailingRawConnectDriver(BaseDriver):
     """Driver whose _do_connect raises a non-DriverError."""
 
+    def __init__(self, name: str) -> None:
+        """Initialize the failing raw connect driver."""
+        super().__init__(name=name, config=StubConfig())
+
     async def _do_connect(self) -> None:
         raise RuntimeError("something broke")
 
@@ -87,6 +107,10 @@ class FailingRawConnectDriver(BaseDriver):
 
 class FailDisconnectDriver(BaseDriver):
     """Driver whose _do_disconnect raises."""
+
+    def __init__(self, name: str) -> None:
+        """Initialize the failing disconnect driver."""
+        super().__init__(name=name, config=StubConfig())
 
     async def _do_connect(self) -> None:
         pass
@@ -155,28 +179,20 @@ class TestDriverHealth:
 class TestDriverErrors:
     def test_driver_error(self) -> None:
         e = DriverError("my-driver", "something failed")
-        assert e.driver == "my-driver"
-        assert e.recoverable is True
         assert "my-driver" in str(e)
-
-    def test_driver_error_irrecoverable(self) -> None:
-        e = DriverError("d", "boom", recoverable=False)
-        assert e.recoverable is False
+        assert "something failed" in str(e)
 
     def test_connection_error(self) -> None:
         e = DriverConnectionError("d", "refused")
         assert isinstance(e, DriverError)
-        assert e.recoverable is False
 
     def test_timeout_error(self) -> None:
         e = DriverTimeoutError("d", "timed out")
         assert isinstance(e, DriverError)
-        assert e.recoverable is True
 
     def test_action_error(self) -> None:
         e = DriverActionError("d", "bad action")
         assert isinstance(e, DriverError)
-        assert e.recoverable is True
 
 
 # ---------------------------------------------------------------------------
@@ -205,10 +221,9 @@ class TestDriverConfig:
 class TestDriverProtocol:
     def test_structural_subtyping(self) -> None:
         assert_type(Driver, type)
-        # The Protocol itself can't be instantiated, but structural checks
-        # confirm it exists as a typing.Protocol
         assert hasattr(Driver, "name")
-        assert hasattr(Driver, "state")
+        assert hasattr(Driver, "environment")
+        assert hasattr(Driver, "is_connected")
         assert hasattr(Driver, "connect")
         assert hasattr(Driver, "disconnect")
         assert hasattr(Driver, "observe")
@@ -224,68 +239,102 @@ class TestDriverProtocol:
 class TestBaseDriver:
     def test_cannot_instantiate_abc(self) -> None:
         with pytest.raises(TypeError):
-            BaseDriver("test", "test")  # type: ignore[abstract]
+            BaseDriver("test", StubConfig())  # type: ignore[abstract]
 
     def test_concrete_driver(self) -> None:
-        d = StubDriver("stub", "test")
+        d = StubDriver("stub")
         assert d.name == "stub"
-        assert d.driver_type == "test"
+        assert d.environment == "test"
         assert d.state == DriverState.DISCONNECTED
+        assert d.is_connected is False
         assert d.error_count == 0
 
     async def test_connect_transitions(self) -> None:
-        d = StubDriver("stub", "test")
+        bus = MemoryEventBus()
+        d = StubDriver("stub")
         assert d.state == DriverState.DISCONNECTED
-        await d.connect()
+        assert d.is_connected is False
+        await d.connect(bus)
         assert d.state == DriverState.CONNECTED
+        assert d.is_connected is True
 
     async def test_disconnect_transitions(self) -> None:
-        d = StubDriver("stub", "test")
-        await d.connect()
+        bus = MemoryEventBus()
+        d = StubDriver("stub")
+        await d.connect(bus)
         await d.disconnect()
         assert d.state == DriverState.DISCONNECTED
+        assert d.is_connected is False
 
     async def test_disconnect_when_already_disconnected(self) -> None:
-        d = StubDriver("stub", "test")
+        d = StubDriver("stub")
         await d.disconnect()
         assert d.state == DriverState.DISCONNECTED
+        assert d.is_connected is False
 
     async def test_connect_failure_sets_error(self) -> None:
-        d = FailingConnectDriver("fail", "test")
+        bus = MemoryEventBus()
+        d = FailingConnectDriver("fail")
         with pytest.raises(DriverConnectionError):
-            await d.connect()
+            await d.connect(bus)
         assert d.state == DriverState.ERROR
         assert d.error_count == 1
+        assert d.is_connected is False
 
     async def test_raw_exception_wrapped(self) -> None:
-        d = FailingRawConnectDriver("fail", "test")
+        bus = MemoryEventBus()
+        d = FailingRawConnectDriver("fail")
         with pytest.raises(DriverError):
-            await d.connect()
+            await d.connect(bus)
         assert d.state == DriverState.ERROR
         assert d.error_count == 1
 
     async def test_disconnect_error_still_disconnects(self) -> None:
-        d = FailDisconnectDriver("fail", "test")
-        await d.connect()
+        bus = MemoryEventBus()
+        d = FailDisconnectDriver("fail")
+        await d.connect(bus)
         await d.disconnect()
         assert d.state == DriverState.DISCONNECTED
+        assert d.is_connected is False
 
     async def test_health_check(self) -> None:
-        d = StubDriver("stub", "test")
-        await d.connect()
+        bus = MemoryEventBus()
+        d = StubDriver("stub")
+        await d.connect(bus)
         h = await d.health_check()
         assert h.state == DriverState.CONNECTED
         assert h.error_count == 0
 
     async def test_execute(self) -> None:
-        d = StubDriver("stub", "test")
+        d = StubDriver("stub")
         action = Action(name="click")
         result = await d.execute(action)
         assert result.success is True
         assert result.action_id == action.action_id
 
     async def test_observe_returns_async_iterator(self) -> None:
-        d = StubDriver("stub", "test")
+        d = StubDriver("stub")
         iterator = await d.observe()
         events = [e async for e in iterator]
         assert events == []
+
+    async def test_publish_event_when_connected(self) -> None:
+        bus = MemoryEventBus()
+        d = StubDriver("stub")
+        await d.connect(bus)
+        event = _make_event()
+        await d._publish_event(event)
+        await bus.drain()
+        assert bus.stats().events_published == 1
+
+    async def test_publish_event_when_disconnected(self) -> None:
+        d = StubDriver("stub")
+        event = _make_event()
+        await d._publish_event(event)  # should not raise
+
+    async def test_event_bus_cleared_on_disconnect(self) -> None:
+        bus = MemoryEventBus()
+        d = StubDriver("stub")
+        await d.connect(bus)
+        await d.disconnect()
+        assert d._event_bus is None

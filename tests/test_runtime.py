@@ -8,8 +8,11 @@ from collections.abc import AsyncGenerator, AsyncIterator
 import pytest
 
 from artax.actions.types import ActionResult
-from artax.drivers.base import BaseDriver, DriverState
+from artax.dashboard.config import DashboardConfig
+from artax.dashboard.server import DashboardServer
+from artax.drivers.base import BaseDriver
 from artax.events.types import Event, EventFilter, EventType, SemanticEvent
+from artax.runtime import _apply_env_overrides, _build_runtime_config, _load_config, _parse_args
 from artax.runtime.core import Runtime, RuntimeConfig, RuntimeState, RuntimeStatus
 
 # ---------------------------------------------------------------------------
@@ -20,9 +23,9 @@ from artax.runtime.core import Runtime, RuntimeConfig, RuntimeState, RuntimeStat
 class OkDriver(BaseDriver):
     """Minimal driver that succeeds."""
 
-    def __init__(self, name: str, driver_type: str = "test") -> None:
-        """Initialize OkDriver."""
-        super().__init__(name=name, driver_type=driver_type)
+    def __init__(self, name: str) -> None:
+        """Initialize the ok driver."""
+        super().__init__(name=name, config=_TestConfig())
 
     async def _do_connect(self) -> None:
         pass
@@ -44,9 +47,9 @@ class OkDriver(BaseDriver):
 class FailConnectDriver(BaseDriver):
     """Driver that fails on connect."""
 
-    def __init__(self, name: str, driver_type: str = "test") -> None:
-        """Initialize FailConnectDriver."""
-        super().__init__(name=name, driver_type=driver_type)
+    def __init__(self, name: str) -> None:
+        """Initialize the failing connect driver."""
+        super().__init__(name=name, config=_TestConfig())
 
     async def _do_connect(self) -> None:
         raise RuntimeError("Connection refused")
@@ -63,6 +66,12 @@ class FailConnectDriver(BaseDriver):
 
     async def execute(self, action: object) -> ActionResult:
         return ActionResult(action_id="x", success=False)
+
+
+class _TestConfig:
+    @property
+    def driver_type(self) -> str:
+        return "test"
 
 
 # ---------------------------------------------------------------------------
@@ -176,43 +185,43 @@ class TestRuntimeLifecycle:
 class TestDriverRegistration:
     async def test_register_driver(self) -> None:
         runtime = Runtime(RuntimeConfig())
-        d = OkDriver("d1", "test")
+        d = OkDriver("d1")
         runtime.register_driver(d)
         assert len(runtime.drivers) == 1
 
     async def test_register_duplicate_ignored(self) -> None:
         runtime = Runtime(RuntimeConfig())
-        d1 = OkDriver("d1", "test")
-        d2 = OkDriver("d1", "test")
+        d1 = OkDriver("d1")
+        d2 = OkDriver("d1")
         runtime.register_driver(d1)
         runtime.register_driver(d2)
         assert len(runtime.drivers) == 1
 
     async def test_driver_connected_on_start(self) -> None:
         runtime = Runtime(RuntimeConfig())
-        d = OkDriver("d1", "test")
+        d = OkDriver("d1")
         runtime.register_driver(d)
         await runtime.start()
-        assert d.state == DriverState.CONNECTED
+        assert d.is_connected is True
         await runtime.stop()
 
     async def test_driver_disconnected_on_stop(self) -> None:
         runtime = Runtime(RuntimeConfig())
-        d = OkDriver("d1", "test")
+        d = OkDriver("d1")
         runtime.register_driver(d)
         await runtime.start()
         await runtime.stop()
-        assert d.state == DriverState.DISCONNECTED
+        assert d.is_connected is False
 
     async def test_multiple_drivers(self) -> None:
         runtime = Runtime(RuntimeConfig())
-        d1 = OkDriver("d1", "test")
-        d2 = OkDriver("d2", "test")
+        d1 = OkDriver("d1")
+        d2 = OkDriver("d2")
         runtime.register_driver(d1)
         runtime.register_driver(d2)
         await runtime.start()
-        assert d1.state == DriverState.CONNECTED
-        assert d2.state == DriverState.CONNECTED
+        assert d1.is_connected is True
+        assert d2.is_connected is True
         status = runtime.status()
         assert status.drivers_connected == 2
         await runtime.stop()
@@ -226,13 +235,13 @@ class TestDriverRegistration:
 class TestFailedDriver:
     async def test_connect_failure_continues(self) -> None:
         runtime = Runtime(RuntimeConfig())
-        ok = OkDriver("ok", "test")
-        bad = FailConnectDriver("bad", "test")
+        ok = OkDriver("ok")
+        bad = FailConnectDriver("bad")
         runtime.register_driver(bad)
         runtime.register_driver(ok)
         await runtime.start()
-        assert ok.state == DriverState.CONNECTED
-        assert bad.state == DriverState.ERROR
+        assert ok.is_connected is True
+        assert bad.is_connected is False
         await runtime.stop()
 
 
@@ -244,7 +253,7 @@ class TestFailedDriver:
 class TestMetrics:
     async def test_status_after_start(self) -> None:
         runtime = Runtime(RuntimeConfig())
-        d = OkDriver("d1", "test")
+        d = OkDriver("d1")
         runtime.register_driver(d)
         await runtime.start()
         status = runtime.status()
@@ -293,7 +302,7 @@ class TestRuntimeEvents:
 
     async def test_stop_emits_driver_disconnected(self) -> None:
         runtime = Runtime(RuntimeConfig())
-        d = OkDriver("d1", "test")
+        d = OkDriver("d1")
         runtime.register_driver(d)
 
         received_events: list[str] = []
@@ -328,3 +337,217 @@ class TestRunForever:
         await runtime.run_forever()
         await task
         assert runtime.state == RuntimeState.STOPPED
+
+
+# ---------------------------------------------------------------------------
+# Runtime Anomalies
+# ---------------------------------------------------------------------------
+
+
+class TestRuntimeAnomalies:
+    async def test_double_start_raises(self) -> None:
+        """Starting an already-running runtime raises RuntimeError."""
+        runtime = Runtime(RuntimeConfig())
+        await runtime.start()
+        with pytest.raises(RuntimeError, match="Cannot start"):
+            await runtime.start()
+        await runtime.stop()
+
+    async def test_properties_before_start_raise(self) -> None:
+        """Accessing runtime properties before start raises RuntimeError."""
+        runtime = Runtime(RuntimeConfig())
+        with pytest.raises(RuntimeError, match="not started"):
+            _ = runtime.event_bus
+        with pytest.raises(RuntimeError, match="not started"):
+            _ = runtime.memory
+        with pytest.raises(RuntimeError, match="not started"):
+            _ = runtime.scheduler
+
+    async def test_stop_when_stopped_is_noop(self) -> None:
+        """Stopping an already-stopped runtime is a safe no-op."""
+        runtime = Runtime(RuntimeConfig())
+        await runtime.stop()
+        assert runtime.state == RuntimeState.STOPPED
+
+    async def test_double_stop_is_noop(self) -> None:
+        """Stopping a stopped runtime after a prior stop is a no-op."""
+        runtime = Runtime(RuntimeConfig())
+        await runtime.start()
+        await runtime.stop()
+        await runtime.stop()
+        assert runtime.state == RuntimeState.STOPPED
+
+    async def test_status_during_run(self) -> None:
+        """Runtime status reflects running state during execution."""
+        runtime = Runtime(RuntimeConfig())
+        await runtime.start()
+        status = runtime.status()
+        assert status.state == RuntimeState.RUNNING
+        assert status.uptime >= 0.0
+        await runtime.stop()
+
+    async def test_register_duplicate_driver_ignored(self) -> None:
+        """Registering a driver with a duplicate name is silently ignored."""
+        runtime = Runtime(RuntimeConfig())
+        d1 = OkDriver("d1")
+        d2 = OkDriver("d1")
+        runtime.register_driver(d1)
+        runtime.register_driver(d2)
+        assert len(runtime.drivers) == 1
+
+    async def test_driver_connect_failure_marks_error(self) -> None:
+        """A driver that fails to connect is marked ERROR and runtime continues."""
+        runtime = Runtime(RuntimeConfig())
+        ok = OkDriver("ok")
+        bad = FailConnectDriver("bad")
+        runtime.register_driver(bad)
+        runtime.register_driver(ok)
+        await runtime.start()
+        assert ok.is_connected is True
+        assert bad.is_connected is False
+        await runtime.stop()
+
+    async def test_driver_disconnect_timeout_handled(self) -> None:
+        """Runtime handles driver disconnect timeout gracefully."""
+        runtime = Runtime(RuntimeConfig(shutdown_timeout=0.01))
+        d = OkDriver("d1")
+        runtime.register_driver(d)
+        await runtime.start()
+        await runtime.stop()
+        assert runtime.state == RuntimeState.STOPPED
+
+
+# ---------------------------------------------------------------------------
+# Dashboard Auto-Start
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardAutoStart:
+    """Dashboard starts automatically with default config when none is provided."""
+
+    async def test_dashboard_starts_with_default_config(self) -> None:
+        """Dashboard server starts automatically even without explicit config."""
+        runtime = Runtime(RuntimeConfig())
+        assert runtime._config.dashboard is not None
+        await runtime.start()
+        assert runtime._dashboard is not None
+        assert isinstance(runtime._dashboard, DashboardServer)
+        assert runtime._dashboard.running is True
+        await runtime.stop()
+
+    async def test_dashboard_starts_with_explicit_config(self) -> None:
+        """Dashboard server starts with explicit config when provided."""
+        cfg = DashboardConfig(ws_port=9001)
+        runtime = Runtime(RuntimeConfig(dashboard=cfg))
+        await runtime.start()
+        assert runtime._dashboard is not None
+        assert runtime._dashboard.running is True
+        await runtime.stop()
+
+    async def test_dashboard_stopped_after_runtime_stop(self) -> None:
+        """Dashboard server is stopped when runtime stops."""
+        cfg = DashboardConfig(ws_port=9002)
+        runtime = Runtime(RuntimeConfig(dashboard=cfg))
+        await runtime.start()
+        assert runtime._dashboard is not None
+        assert runtime._dashboard.running is True
+        await runtime.stop()
+        assert runtime._dashboard is None
+
+
+# ---------------------------------------------------------------------------
+# CLI Functions
+# ---------------------------------------------------------------------------
+
+
+class TestParseArgs:
+    """Tests for _parse_args."""
+
+    def test_default_args(self) -> None:
+        args = _parse_args([])
+        assert args.config == "artax.toml"
+        assert args.log_level == "INFO"
+
+    def test_custom_config(self) -> None:
+        args = _parse_args(["-c", "custom.toml"])
+        assert args.config == "custom.toml"
+
+    def test_custom_log_level(self) -> None:
+        args = _parse_args(["--log-level", "DEBUG"])
+        assert args.log_level == "DEBUG"
+
+    def test_env_config(self) -> None:
+        import os
+
+        os.environ["ARTAX_CONFIG"] = "env.toml"
+        try:
+            args = _parse_args([])
+            assert args.config == "env.toml"
+        finally:
+            del os.environ["ARTAX_CONFIG"]
+
+
+class TestLoadConfig:
+    """Tests for _load_config."""
+
+    def test_missing_file_returns_empty_dict(self) -> None:
+        result = _load_config("nonexistent_file_12345.toml")
+        assert result == {}
+
+    def test_loads_valid_toml(self, tmp_path: object) -> None:
+        config_file = tmp_path / "test.toml"
+        config_file.write_bytes(b"[runtime]\nshutdown_timeout = 10.0\n")
+        result = _load_config(str(config_file))
+        assert result["runtime"]["shutdown_timeout"] == 10.0
+
+
+class TestApplyEnvOverrides:
+    """Tests for _apply_env_overrides."""
+
+    def test_no_overrides_returns_empty(self) -> None:
+        result = _apply_env_overrides({})
+        assert result == {}
+
+    def test_shutdown_timeout_override(self) -> None:
+        import os
+
+        os.environ["ARTAX_SHUTDOWN_TIMEOUT"] = "15.0"
+        try:
+            result = _apply_env_overrides({})
+            assert result["runtime"]["shutdown_timeout"] == 15.0
+        finally:
+            del os.environ["ARTAX_SHUTDOWN_TIMEOUT"]
+
+    def test_log_level_override(self) -> None:
+        import os
+
+        os.environ["ARTAX_LOG_LEVEL"] = "DEBUG"
+        try:
+            result = _apply_env_overrides({})
+            assert result["runtime"]["log_level"] == "DEBUG"
+        finally:
+            del os.environ["ARTAX_LOG_LEVEL"]
+
+
+class TestBuildRuntimeConfig:
+    """Tests for _build_runtime_config."""
+
+    def test_empty_config_creates_defaults(self) -> None:
+        result = _build_runtime_config({})
+        assert result.shutdown_timeout == 5.0
+        assert result.dashboard is not None
+        assert result.dashboard.ws_port == 8081
+
+    def test_custom_shutdown_timeout(self) -> None:
+        result = _build_runtime_config({"runtime": {"shutdown_timeout": 10.0}})
+        assert result.shutdown_timeout == 10.0
+
+    def test_dashboard_config_from_toml(self) -> None:
+        result = _build_runtime_config(
+            {
+                "dashboard": {"ws_port": 9001, "host": "0.0.0.0"},
+            }
+        )
+        assert result.dashboard is not None
+        assert result.dashboard.ws_port == 9001
+        assert result.dashboard.host == "0.0.0.0"

@@ -68,9 +68,7 @@ def _build_runtime_config(toml_cfg: dict[str, Any]) -> RuntimeConfig:
         keys = {f.name for f in dataclasses.fields(cls)}
         return {k: v for k, v in cfg.items() if k in keys}
 
-    dashboard: DashboardConfig | None = None
-    if "dashboard" in toml_cfg:
-        dashboard = DashboardConfig(**_dc("dashboard", DashboardConfig))
+    dashboard = DashboardConfig(**_dc("dashboard", DashboardConfig))
 
     return RuntimeConfig(
         shutdown_timeout=toml_cfg.get("runtime", {}).get("shutdown_timeout", 5.0),

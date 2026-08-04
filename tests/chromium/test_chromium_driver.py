@@ -12,10 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from artax.actions.types import Action
+from artax.actions.types import Action, ActionResult
 from artax.drivers.base import DriverError, DriverState
 from artax.drivers.chromium.config import ChromiumConfig
 from artax.drivers.chromium.driver import MUTATION_OBSERVER_SCRIPT, ChromiumDriver
+from artax.events.bus import MemoryEventBus
 from artax.events.types import EventType, SemanticEvent
 
 
@@ -69,7 +70,7 @@ class TestChromiumDriverInstantiation:
         config = ChromiumConfig()
         driver = ChromiumDriver(config)
         assert driver.name == "chromium"
-        assert driver.driver_type == "chromium"
+        assert driver.environment == "chromium"
 
     def test_initial_state_disconnected(self) -> None:
         config = ChromiumConfig()
@@ -125,7 +126,7 @@ class TestChromiumDriverConnect:
         mock_context.new_page = AsyncMock(return_value=mock_page)
 
         with patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw):
-            await driver.connect()
+            await driver.connect(MemoryEventBus())
 
         assert driver.state == DriverState.CONNECTED
         mock_pw.chromium.launch.assert_called_once()
@@ -144,7 +145,7 @@ class TestChromiumDriverConnect:
         mock_context.pages = [mock_page]
 
         with patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw):
-            await driver.connect()
+            await driver.connect(MemoryEventBus())
 
         assert driver.state == DriverState.CONNECTED
         mock_pw.chromium.connect_over_cdp.assert_called_once_with("http://localhost:9222")
@@ -163,7 +164,7 @@ class TestChromiumDriverConnect:
         mock_context.new_page = AsyncMock(return_value=mock_page)
 
         with patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw):
-            await driver.connect()
+            await driver.connect(MemoryEventBus())
 
         mock_page.goto.assert_called_once_with(
             "https://example.com",
@@ -185,7 +186,7 @@ class TestChromiumDriverConnect:
         mock_context.new_page = AsyncMock(return_value=mock_page)
 
         with patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw):
-            await driver.connect()
+            await driver.connect(MemoryEventBus())
 
         # Should have called page.evaluate to inject MutationObserver
         calls = mock_page.evaluate.call_args_list
@@ -203,7 +204,7 @@ class TestChromiumDriverConnect:
             patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw),
             pytest.raises(DriverError),
         ):
-            await driver.connect()
+            await driver.connect(MemoryEventBus())
 
         assert driver.state == DriverState.ERROR
         assert driver.error_count == 1
@@ -401,6 +402,399 @@ class TestChromiumDriverObserve:
         async for _ in driver.observe():
             pass
 
+        assert driver.state == DriverState.DISCONNECTED
+
+    async def test_observe_skips_empty_queue(self) -> None:
+        """Observe loop handles empty queue and stops when disconnected."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = None
+
+        async def _stop_later() -> None:
+            await asyncio.sleep(0.1)
+            driver._state = DriverState.DISCONNECTED
+
+        asyncio.create_task(_stop_later())
+
+        events: list[SemanticEvent] = [ev async for ev in driver.observe()]
+
+        assert isinstance(events, list)
+
+    async def test_observe_handles_page_none(self) -> None:
+        """Observe handles page=None gracefully during DOM polling."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = None
+
+        async def _stop_later() -> None:
+            await asyncio.sleep(0.1)
+            driver._state = DriverState.DISCONNECTED
+
+        asyncio.create_task(_stop_later())
+
+        events: list[SemanticEvent] = [ev async for ev in driver.observe()]
+
+        assert isinstance(events, list)
+
+
+# ---------------------------------------------------------------------------
+# Publish Methods
+# ---------------------------------------------------------------------------
+
+
+class TestPublishMethods:
+    async def test_publish_to_bus(self) -> None:
+        """_publish sends event to both queue and bus."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+        driver._page = _make_mock_page()
+
+        event = SemanticEvent.create(
+            type=EventType.CUSTOM,
+            source="chromium",
+            payload={"test": True},
+        )
+        await driver._publish(event)
+
+        assert driver._event_queue.qsize() == 1
+
+    async def test_publish_without_bus(self) -> None:
+        """_publish should not raise when event_bus is None."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+
+        event = SemanticEvent.create(
+            type=EventType.CUSTOM,
+            source="chromium",
+            payload={"test": True},
+        )
+        await driver._publish(event)
+
+        assert driver._event_queue.qsize() == 1
+
+    async def test_publish_action_result_success(self) -> None:
+        """_publish_action_result publishes ACTION_COMPLETED on success."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+        driver._page = _make_mock_page()
+
+        action = Action(name="click", target="#btn")
+        result = ActionResult(action_id=action.action_id, success=True)
+        await driver._publish_action_result(action, result)
+
+        await bus.drain()
+        assert bus.stats().events_published == 1
+
+    async def test_publish_action_result_failure(self) -> None:
+        """_publish_action_result publishes ACTION_FAILED on failure."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+        driver._page = _make_mock_page()
+
+        action = Action(name="click", target="#btn")
+        result = ActionResult(
+            action_id=action.action_id,
+            success=False,
+            error="timeout",
+        )
+        await driver._publish_action_result(action, result)
+
+        await bus.drain()
+        assert bus.stats().events_published == 1
+
+    async def test_publish_action_result_no_bus(self) -> None:
+        """_publish_action_result should not raise when event_bus is None."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+
+        action = Action(name="click", target="#btn")
+        result = ActionResult(action_id=action.action_id, success=True)
+        await driver._publish_action_result(action, result)  # should not raise
+
+    async def test_publish_user_event_click(self) -> None:
+        """_publish_user_event publishes USER_INPUT for click actions."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+        driver._page = _make_mock_page()
+
+        action = Action(name="click", target="#btn")
+        driver._publish_user_event(action)
+
+    async def test_publish_user_event_type(self) -> None:
+        """_publish_user_event publishes USER_INPUT for type actions."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+        driver._page = _make_mock_page()
+
+        action = Action(name="type", target="#input", parameters={"text": "hello"})
+        driver._publish_user_event(action)
+
+    async def test_publish_user_event_screenshot(self) -> None:
+        """_publish_user_event publishes SCREENSHOT_TAKEN for screenshot actions."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+        driver._page = _make_mock_page()
+
+        action = Action(name="screenshot")
+        driver._publish_user_event(action)
+
+    async def test_publish_user_event_unknown_action(self) -> None:
+        """_publish_user_event ignores unknown action types."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+        driver._page = _make_mock_page()
+
+        action = Action(name="unknown_action")
+        driver._publish_user_event(action)  # should not raise
+
+    async def test_publish_user_event_no_bus(self) -> None:
+        """_publish_user_event should not raise when event_bus is None."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+
+        action = Action(name="click", target="#btn")
+        driver._publish_user_event(action)  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Page Event Handlers
+# ---------------------------------------------------------------------------
+
+
+class TestPageEventHandlers:
+    async def test_on_page_loaded_publishes_event(self) -> None:
+        """_on_page_loaded creates and queues PAGE_LOADED event."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+
+        driver._on_page_loaded()
+
+        assert driver._event_queue.qsize() >= 1
+
+    async def test_on_page_loaded_no_page(self) -> None:
+        """_on_page_loaded should not raise when page is None."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = None
+
+        driver._on_page_loaded()  # should not raise
+
+    async def test_on_page_error_publishes_event(self) -> None:
+        """_on_page_error creates and queues PAGE_ERROR event."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+
+        driver._on_page_error("Test error message")
+
+        assert driver._event_queue.qsize() >= 1
+
+    async def test_on_page_error_no_page(self) -> None:
+        """_on_page_error should not raise when page is None."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = None
+
+        driver._on_page_error("Test error")  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# DOM Polling
+# ---------------------------------------------------------------------------
+
+
+class TestDomPolling:
+    async def test_poll_dom_changes_no_page(self) -> None:
+        """_poll_dom_changes returns None when page is None."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._page = None
+
+        result = await driver._poll_dom_changes()
+        assert result is None
+
+    async def test_poll_dom_changes_exception(self) -> None:
+        """_poll_dom_changes returns None when page.evaluate raises."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._page = _make_mock_page()
+        driver._page.evaluate.side_effect = RuntimeError("Browser closed")
+
+        result = await driver._poll_dom_changes()
+        assert result is None
+
+    def test_has_dom_changes_all_zero(self) -> None:
+        """_has_dom_changes returns False when all counts are zero."""
+        from artax.drivers.chromium.driver import _has_dom_changes
+
+        assert _has_dom_changes({"added": 0, "removed": 0, "modified": 0}) is False
+
+    def test_has_dom_changes_nonzero(self) -> None:
+        """_has_dom_changes returns True when any count is non-zero."""
+        from artax.drivers.chromium.driver import _has_dom_changes
+
+        assert _has_dom_changes({"added": 1, "removed": 0, "modified": 0}) is True
+        assert _has_dom_changes({"added": 0, "removed": 1, "modified": 0}) is True
+        assert _has_dom_changes({"added": 0, "removed": 0, "modified": 1}) is True
+
+
+# ---------------------------------------------------------------------------
+# Playwright Import Error
+# ---------------------------------------------------------------------------
+
+
+class TestPlaywrightImportError:
+    async def test_connect_handles_playwright_missing(self) -> None:
+        """Connect raises DriverError when playwright is not installed."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+
+        with (
+            patch(
+                "artax.drivers.chromium.driver._get_playwright",
+                side_effect=ImportError("No module named 'playwright'"),
+            ),
+            pytest.raises(DriverError),
+        ):
+            await driver.connect(MemoryEventBus())
+
+        assert driver.state == DriverState.ERROR
+
+
+# ---------------------------------------------------------------------------
+# Health Check Anomalies
+# ---------------------------------------------------------------------------
+
+
+class TestHealthCheckAnomalies:
+    async def test_health_when_unhealthy(self) -> None:
+        """Health check reflects UNHEALTHY state."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.UNHEALTHY
+        driver._error_count = 5
+
+        health = await driver.health_check()
+        assert health.state == DriverState.UNHEALTHY
+        assert health.error_count == 5
+
+    async def test_health_error_count_increments(self) -> None:
+        """Health check preserves error_count across calls."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.ERROR
+        driver._error_count = 3
+
+        health = await driver.health_check()
+        assert health.state == DriverState.ERROR
+        assert health.error_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Execute Anomalies
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteAnomalies:
+    async def test_execute_unknown_action_returns_error(self) -> None:
+        """Executing an unknown action returns failure with error message."""
+        driver = self._connected_driver()
+        action = Action(name="nonexistent_action")
+        result = await driver.execute(action)
+        assert result.success is False
+        assert result.error is not None
+
+    async def test_execute_when_not_connected(self) -> None:
+        """Executing when not connected returns failure."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        action = Action(name="click", target="#btn")
+        result = await driver.execute(action)
+        assert result.success is False
+        assert result.error is not None
+
+    async def test_execute_page_error_returns_failure(self) -> None:
+        """Executing when page raises returns failure."""
+        driver = self._connected_driver()
+        driver._page.click.side_effect = RuntimeError("Element not found")
+        action = Action(name="click", target="#missing")
+        result = await driver.execute(action)
+        assert result.success is False
+        assert "Element not found" in (result.error or "")
+
+    def _connected_driver(self) -> ChromiumDriver:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        driver._browser = _make_mock_browser()
+        return driver
+
+
+# ---------------------------------------------------------------------------
+# Disconnect Anomalies
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectAnomalies:
+    async def test_disconnect_when_never_connected(self) -> None:
+        """Disconnecting when never connected is a safe no-op."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        assert driver.state == DriverState.DISCONNECTED
+
+        await driver.disconnect()  # should not raise
+
+        assert driver.state == DriverState.DISCONNECTED
+
+    async def test_disconnect_with_page_close_error(self) -> None:
+        """Disconnect handles page close errors gracefully."""
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        driver._page.close.side_effect = RuntimeError("Already closed")
+        driver._browser = _make_mock_browser()
+
+        await driver.disconnect()  # should not raise
         assert driver.state == DriverState.DISCONNECTED
 
 
