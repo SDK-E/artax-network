@@ -1,0 +1,53 @@
+# Artax Runtime Configuration
+# Copy to artax.toml and customize as needed.
+# See: docs/prd/prd-runtime.md
+
+[runtime]
+shutdown_timeout = 5.0
+
+[event_bus]
+max_queue_size = 1000
+history_size = 1000
+stats_interval_s = 5.0
+
+[memory]
+backend = "memory"
+namespace = "default"
+capacity = 10000
+
+[scheduler]
+strategy = "priority"
+max_concurrent = 100
+flush_interval_ms = 100
+
+[dashboard]
+host = "127.0.0.1"
+port = 8080
+ws_port = 8081
+event_history_size = 100
+broadcast_interval_ms = 250
+
+# Drivers are loaded from the [[drivers]] section.
+# Each entry specifies a driver type and its configuration.
+#
+# Currently supported driver types:
+#   - "chromium" — browser automation via Playwright
+#
+# On macOS where Playwright can't install Chromium (e.g. mac13),
+# use cdp_url to connect to an existing Chrome/Chromium instance:
+#   1. Start Chrome with remote debugging:
+#      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+#        --remote-debugging-port=9222 --headless --no-sandbox
+#   2. Set cdp_url below.
+#
+# Install dependencies:
+#   pip install "artax-network[chromium]"
+#   playwright install chromium
+
+[[drivers]]
+type = "chromium"
+headless = true
+cdp_url = "http://127.0.0.1:9222"
+initial_url = "about:blank"
+viewport_width = 1280
+viewport_height = 720

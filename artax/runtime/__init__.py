@@ -5,14 +5,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import dataclasses
+import importlib
 import logging
 import os
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..dashboard.config import DashboardConfig
+from ..drivers.base import Driver
 from ..events.types import EventBusConfig
 from ..memory.base import MemoryConfig
 from ..scheduler.core import SchedulerConfig
@@ -79,6 +81,84 @@ def _build_runtime_config(toml_cfg: dict[str, Any]) -> RuntimeConfig:
     )
 
 
+_DRIVER_MODULES: dict[str, str] = {
+    "chromium": "artax.drivers.chromium",
+}
+
+
+def _load_driver(driver_type: str, config: dict[str, Any]) -> Driver | None:
+    """Instantiate a single driver from config.
+
+    Uses dynamic import so the runtime CLI can support any driver
+    without hardcoding imports at module level.
+
+    Args:
+        driver_type: Driver type string (e.g. "chromium").
+        config: Driver-specific config fields.
+
+    Returns:
+        A Driver instance, or None if the driver type is unknown or
+        its dependencies are not installed.
+
+    """
+    module_path = _DRIVER_MODULES.get(driver_type)
+    if module_path is None:
+        logger.warning("Unknown driver type: %s", driver_type)
+        return None
+
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as e:
+        logger.warning("Driver '%s' dependencies not installed: %s", driver_type, e)
+        return None
+
+    config_cls: type | None = getattr(module, "DriverConfig", None)
+    driver_cls: type | None = getattr(module, "Driver", None)
+    if config_cls is None or driver_cls is None:
+        logger.warning("Driver module '%s' incomplete", module_path)
+        return None
+
+    config_keys = {f.name for f in dataclasses.fields(config_cls)}
+    config_kwargs = {k: v for k, v in config.items() if k in config_keys}
+    cfg = config_cls(**config_kwargs)
+    driver = driver_cls(config=cfg)
+    return cast("Driver", driver)
+
+
+def _load_drivers(toml_cfg: dict[str, Any]) -> list[Driver]:
+    """Load and instantiate drivers from TOML configuration.
+
+    Expects a ``[[drivers]]`` section in the config file:
+    ```toml
+    [[drivers]]
+    type = "chromium"
+    headless = true
+    initial_url = "https://example.com"
+    ```
+    """
+    drivers: list[Driver] = []
+    driver_configs = toml_cfg.get("drivers", [])
+
+    if isinstance(driver_configs, dict):
+        driver_configs = [driver_configs]
+
+    if not isinstance(driver_configs, list):
+        return drivers
+
+    for dc in driver_configs:
+        if not isinstance(dc, dict):
+            continue
+        driver_type = str(dc.get("type", ""))
+        if not driver_type:
+            logger.warning("Driver config missing 'type' field, skipping")
+            continue
+        driver = _load_driver(driver_type, dc)
+        if driver is not None:
+            drivers.append(driver)
+
+    return drivers
+
+
 def cli(argv: list[str] | None = None) -> None:
     """CLI entry point for the Artax runtime."""
     args = _parse_args(argv)
@@ -90,8 +170,11 @@ def cli(argv: list[str] | None = None) -> None:
     toml_cfg = _load_config(args.config)
     toml_cfg = _apply_env_overrides(toml_cfg)
     rt_config = _build_runtime_config(toml_cfg)
-
     runtime = Runtime(rt_config)
+
+    for driver in _load_drivers(toml_cfg):
+        runtime.register_driver(driver)
+        logger.info("Loaded driver: %s", driver.name)
 
     async def _run() -> None:
         await runtime.run_forever()

@@ -12,7 +12,14 @@ from artax.dashboard.config import DashboardConfig
 from artax.dashboard.server import DashboardServer
 from artax.drivers.base import BaseDriver
 from artax.events.types import Event, EventFilter, EventType, SemanticEvent
-from artax.runtime import _apply_env_overrides, _build_runtime_config, _load_config, _parse_args
+from artax.runtime import (
+    _apply_env_overrides,
+    _build_runtime_config,
+    _load_config,
+    _load_driver,
+    _load_drivers,
+    _parse_args,
+)
 from artax.runtime.core import Runtime, RuntimeConfig, RuntimeState, RuntimeStatus
 
 # ---------------------------------------------------------------------------
@@ -551,3 +558,72 @@ class TestBuildRuntimeConfig:
         assert result.dashboard is not None
         assert result.dashboard.ws_port == 9001
         assert result.dashboard.host == "0.0.0.0"
+
+
+# ---------------------------------------------------------------------------
+# Driver Loading
+# ---------------------------------------------------------------------------
+
+
+class TestLoadDrivers:
+    """Tests for _load_drivers / _load_driver."""
+
+    def test_no_drivers_section_returns_empty(self) -> None:
+        assert _load_drivers({}) == []
+
+    def test_empty_drivers_list_returns_empty(self) -> None:
+        assert _load_drivers({"drivers": []}) == []
+
+    def test_dict_instead_of_list_is_wrapped(self) -> None:
+        # A single driver as a dict should be treated as a list of one
+        drivers = _load_drivers({"drivers": {"type": "chromium"}})
+        assert len(drivers) == 1
+
+    def test_unknown_driver_type_returns_empty(self) -> None:
+        drivers = _load_drivers({"drivers": [{"type": "nonexistent"}]})
+        assert drivers == []
+
+    def test_missing_type_field_skipped(self) -> None:
+        drivers = _load_drivers({"drivers": [{"headless": True}]})
+        assert drivers == []
+
+    def test_non_dict_entry_skipped(self) -> None:
+        drivers = _load_drivers({"drivers": ["not a dict"]})
+        assert drivers == []
+
+    def test_chromium_driver_loaded(self) -> None:
+        drivers = _load_drivers(
+            {
+                "drivers": [{"type": "chromium", "headless": True}],
+            }
+        )
+        assert len(drivers) == 1
+        assert drivers[0].name == "chromium"
+
+    def test_chromium_config_fields_filtered(self) -> None:
+        """Unknown config keys are silently dropped."""
+        drivers = _load_drivers(
+            {
+                "drivers": [
+                    {"type": "chromium", "headless": True, "unknown_key": "value"},
+                ],
+            }
+        )
+        assert len(drivers) == 1
+
+
+class TestLoadDriver:
+    """Tests for _load_driver."""
+
+    def test_chromium_returns_driver(self) -> None:
+        driver = _load_driver("chromium", {"headless": True})
+        assert driver is not None
+        assert driver.name == "chromium"
+
+    def test_unknown_type_returns_none(self) -> None:
+        assert _load_driver("nonexistent", {}) is None
+
+    def test_config_filtered_to_known_fields(self) -> None:
+        driver = _load_driver("chromium", {"headless": False, "bogus": 1})
+        assert driver is not None
+        assert driver.config.headless is False

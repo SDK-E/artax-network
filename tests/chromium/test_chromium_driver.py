@@ -30,6 +30,7 @@ def _make_mock_page() -> AsyncMock:
     page.goto = AsyncMock()
     page.click = AsyncMock()
     page.fill = AsyncMock()
+    page.type = AsyncMock()
     page.screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\n fake_png_data")
     page.wait_for_selector = AsyncMock()
     page.on = MagicMock()
@@ -202,6 +203,7 @@ class TestChromiumDriverConnect:
 
         with (
             patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw),
+            patch("artax.drivers.chromium.driver._find_chrome", return_value=None),
             pytest.raises(DriverError),
         ):
             await driver.connect(MemoryEventBus())
@@ -274,7 +276,7 @@ class TestChromiumDriverExecute:
         )
         result = await driver.execute(action)
         assert result.success is True
-        driver._page.fill.assert_called_once_with(
+        driver._page.type.assert_called_once_with(
             "input[name=email]", "user@example.com", timeout=10000
         )
 
@@ -354,7 +356,7 @@ class TestChromiumDriverObserve:
         )
         driver._event_queue.put_nowait(event)
 
-        events: list[SemanticEvent] = []
+        events = []
         async for ev in driver.observe():
             events.append(ev)
             if len(events) >= 1:
@@ -377,7 +379,7 @@ class TestChromiumDriverObserve:
         )
         driver._event_queue.put_nowait(event)
 
-        events: list[SemanticEvent] = []
+        events = []
         async for ev in driver.observe():
             events.append(ev)
             if len(events) >= 1:
@@ -417,7 +419,7 @@ class TestChromiumDriverObserve:
 
         asyncio.create_task(_stop_later())
 
-        events: list[SemanticEvent] = [ev async for ev in driver.observe()]
+        events = [ev async for ev in driver.observe()]
 
         assert isinstance(events, list)
 
@@ -434,7 +436,7 @@ class TestChromiumDriverObserve:
 
         asyncio.create_task(_stop_later())
 
-        events: list[SemanticEvent] = [ev async for ev in driver.observe()]
+        events = [ev async for ev in driver.observe()]
 
         assert isinstance(events, list)
 
@@ -700,8 +702,115 @@ class TestPlaywrightImportError:
 
 
 # ---------------------------------------------------------------------------
-# Health Check Anomalies
+# Chrome Auto-Launch
 # ---------------------------------------------------------------------------
+
+
+class TestFindChrome:
+    def test_find_chrome_returns_path(self) -> None:
+        from artax.drivers.chromium.driver import _find_chrome
+
+        result = _find_chrome()
+        if result is not None:
+            assert isinstance(result, str)
+
+    def test_find_chrome_returns_none(self) -> None:
+        from artax.drivers.chromium.driver import _find_chrome
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("pathlib.Path.is_file", return_value=False),
+        ):
+            assert _find_chrome() is None
+
+    def test_find_chrome_respects_env_var(self) -> None:
+        from artax.drivers.chromium.driver import _find_chrome
+
+        with (
+            patch.dict("os.environ", {"ARTAX_CHROME_PATH": "/custom/chrome"}),
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("os.access", return_value=True),
+        ):
+            assert _find_chrome() == "/custom/chrome"
+
+    def test_find_chrome_prioritizes_env_var(self) -> None:
+        from artax.drivers.chromium.driver import _find_chrome
+
+        with (
+            patch.dict("os.environ", {"ARTAX_CHROME_PATH": "/custom/chrome"}),
+            patch("shutil.which", return_value="/system/chrome"),
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("os.access", return_value=True),
+        ):
+            assert _find_chrome() == "/custom/chrome"
+
+
+class TestChromeAutoLaunch:
+    async def test_cdp_failure_falls_back_to_playwright(self) -> None:
+        config = ChromiumConfig(cdp_url="http://127.0.0.1:9222")
+        driver = ChromiumDriver(config)
+
+        mock_pw = _make_mock_playwright()
+        mock_browser = _make_mock_browser()
+        mock_context = _make_mock_context()
+        mock_page = _make_mock_page()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_pw.chromium.launch.return_value = mock_browser
+
+        with (
+            patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw),
+            patch.object(driver, "_connect_via_cdp", side_effect=RuntimeError("CDP refused")),
+            patch.object(driver, "_close_browser", new=AsyncMock()),
+        ):
+            await driver.connect(MemoryEventBus())
+
+        assert driver.state == DriverState.CONNECTED
+        mock_pw.chromium.launch.assert_called_once()
+
+    async def test_playwright_failure_falls_back_to_chrome_autolaunch(self) -> None:
+        config = ChromiumConfig(cdp_url=None)
+        driver = ChromiumDriver(config)
+
+        mock_pw = _make_mock_playwright()
+        mock_pw.chromium.launch.side_effect = RuntimeError("Browser not found")
+
+        mock_browser = _make_mock_browser()
+        mock_context = _make_mock_context()
+        mock_page = _make_mock_page()
+        mock_pw.chromium.connect_over_cdp.return_value = mock_browser
+        mock_browser.contexts = [mock_context]
+        mock_context.pages = [mock_page]
+
+        mock_launch = AsyncMock(return_value="http://127.0.0.1:9222")
+        with (
+            patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw),
+            patch.object(driver, "_launch_chrome_cdp", new=mock_launch),
+            patch.object(driver, "_close_browser", new=AsyncMock()),
+        ):
+            await driver.connect(MemoryEventBus())
+
+        assert driver.state == DriverState.CONNECTED
+        mock_launch.assert_called_once()
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://127.0.0.1:9222",
+        )
+
+    async def test_chrome_not_found_raises_driver_error(self) -> None:
+        config = ChromiumConfig(cdp_url=None)
+        driver = ChromiumDriver(config)
+
+        mock_pw = _make_mock_playwright()
+        mock_pw.chromium.launch.side_effect = RuntimeError("Browser not found")
+
+        with (
+            patch("artax.drivers.chromium.driver._get_playwright", return_value=mock_pw),
+            patch("artax.drivers.chromium.driver._find_chrome", return_value=None),
+            pytest.raises(DriverError),
+        ):
+            await driver.connect(MemoryEventBus())
+
+        assert driver.state == DriverState.ERROR
 
 
 class TestHealthCheckAnomalies:
@@ -796,6 +905,243 @@ class TestDisconnectAnomalies:
 
         await driver.disconnect()  # should not raise
         assert driver.state == DriverState.DISCONNECTED
+
+
+# ---------------------------------------------------------------------------
+# Fill / Scroll / Wait-For Actions
+# ---------------------------------------------------------------------------
+
+
+class TestFillAction:
+    def _connected_driver(self) -> ChromiumDriver:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        driver._browser = _make_mock_browser()
+        return driver
+
+    async def test_fill_action(self) -> None:
+        driver = self._connected_driver()
+        action = Action(
+            name="fill",
+            target="input[name=email]",
+            parameters={"value": "user@example.com"},
+        )
+        result = await driver.execute(action)
+        assert result.success is True
+        driver._page.fill.assert_called_once_with(
+            "input[name=email]", "user@example.com", timeout=10000
+        )
+
+    async def test_fill_action_not_connected(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        action = Action(
+            name="fill",
+            target="input[name=email]",
+            parameters={"value": "user@example.com"},
+        )
+        result = await driver.execute(action)
+        assert result.success is False
+
+
+class TestScrollAction:
+    def _connected_driver(self) -> ChromiumDriver:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        driver._browser = _make_mock_browser()
+        return driver
+
+    async def test_scroll_action(self) -> None:
+        driver = self._connected_driver()
+        action = Action(
+            name="scroll",
+            parameters={"x": 100, "y": 200},
+        )
+        result = await driver.execute(action)
+        assert result.success is True
+        driver._page.evaluate.assert_called_once_with("window.scrollBy(100, 200)")
+
+    async def test_scroll_action_default_zero(self) -> None:
+        driver = self._connected_driver()
+        action = Action(name="scroll")
+        result = await driver.execute(action)
+        assert result.success is True
+        driver._page.evaluate.assert_called_once_with("window.scrollBy(0, 0)")
+
+
+class TestWaitForAction:
+    def _connected_driver(self) -> ChromiumDriver:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        driver._browser = _make_mock_browser()
+        return driver
+
+    async def test_wait_for_action(self) -> None:
+        driver = self._connected_driver()
+        action = Action(name="wait_for", target="#loaded")
+        result = await driver.execute(action)
+        assert result.success is True
+        driver._page.wait_for_selector.assert_called_once()
+
+    async def test_wait_for_action_not_connected(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        action = Action(name="wait_for", target="#loaded")
+        result = await driver.execute(action)
+        assert result.success is False
+
+
+# ---------------------------------------------------------------------------
+# Page State Methods
+# ---------------------------------------------------------------------------
+
+
+class TestPageStateMethods:
+    def _connected_driver(self) -> ChromiumDriver:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        driver._browser = _make_mock_browser()
+        return driver
+
+    async def test_current_url(self) -> None:
+        driver = self._connected_driver()
+        url = await driver.current_url()
+        assert url == "about:blank"
+
+    async def test_current_title(self) -> None:
+        driver = self._connected_driver()
+        title = await driver.current_title()
+        assert title == "Test Page"
+
+    async def test_page_html(self) -> None:
+        driver = self._connected_driver()
+        html = await driver.page_html()
+        assert html == "<html><body></body></html>"
+
+    async def test_current_url_when_no_page(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._page = None
+        url = await driver.current_url()
+        assert url == ""
+
+    async def test_current_title_when_no_page(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._page = None
+        title = await driver.current_title()
+        assert title == ""
+
+    async def test_page_html_when_no_page(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._page = None
+        html = await driver.page_html()
+        assert html == ""
+
+
+# ---------------------------------------------------------------------------
+# Console and Frame Navigated Handlers
+# ---------------------------------------------------------------------------
+
+
+class TestConsoleHandler:
+    async def test_on_console_publishes_user_input(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+
+        mock_msg = MagicMock()
+        mock_msg.text = "hello world"
+        driver._on_console(mock_msg)
+
+        assert driver._event_queue.qsize() >= 1
+
+    async def test_on_console_no_bus(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+
+        mock_msg = MagicMock()
+        mock_msg.text = "hello world"
+        driver._on_console(mock_msg)  # should not raise
+
+
+class TestFrameNavigatedHandler:
+    async def test_on_framenavigated_publishes_dom_changed(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+        bus = MemoryEventBus()
+        driver._event_bus = bus
+
+        driver._on_frame_navigated(MagicMock())
+
+        assert driver._event_queue.qsize() >= 1
+
+    async def test_on_framenavigated_no_bus(self) -> None:
+        config = ChromiumConfig()
+        driver = ChromiumDriver(config)
+        driver._state = DriverState.CONNECTED
+        driver._page = _make_mock_page()
+
+        driver._on_frame_navigated(MagicMock())  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Config New Fields
+# ---------------------------------------------------------------------------
+
+
+class TestChromiumConfigNewFields:
+    def test_screenshot_timeout_ms_default(self) -> None:
+        config = ChromiumConfig()
+        assert config.screenshot_timeout_ms == 5000
+
+    def test_dom_observer_threshold_default(self) -> None:
+        config = ChromiumConfig()
+        assert config.dom_observer_threshold == "significant"
+
+    def test_user_data_dir_default(self) -> None:
+        config = ChromiumConfig()
+        assert config.user_data_dir is None
+
+    def test_screenshot_quality_default(self) -> None:
+        config = ChromiumConfig()
+        assert config.screenshot_quality == 80
+
+    def test_cdp_port_default(self) -> None:
+        config = ChromiumConfig()
+        assert config.cdp_port == 9222
+
+    def test_custom_screenshot_timeout(self) -> None:
+        config = ChromiumConfig(screenshot_timeout_ms=8000)
+        assert config.screenshot_timeout_ms == 8000
+
+    def test_custom_dom_observer_threshold(self) -> None:
+        config = ChromiumConfig(dom_observer_threshold="all")
+        assert config.dom_observer_threshold == "all"
+
+    def test_custom_user_data_dir(self) -> None:
+        config = ChromiumConfig(user_data_dir="/home/user/profile")
+        assert config.user_data_dir == "/home/user/profile"
+
+    def test_custom_screenshot_quality(self) -> None:
+        config = ChromiumConfig(screenshot_quality=90)
+        assert config.screenshot_quality == 90
 
 
 # ---------------------------------------------------------------------------

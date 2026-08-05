@@ -1,48 +1,22 @@
-# Artax Network — Implementation Tasks
+# Artax Network — Gap Analysis Documents
 
-Each subdirectory contains a task prompt for implementing one subsystem of the Artax Network runtime.
-
-## Execution Order
-
-Tasks MUST be executed in dependency order. Layers 1a/1b/1c can run in parallel after Layer 0 completes.
-
-```
-Layer 0 ─── 01-events
-              │
-    ┌─────────┼─────────┐
-    │         │         │
-Layer 1a   Layer 1b   Layer 1c
-02-memory  03-sched   04-driver-api
-    │         │         │
-    └─────────┼─────────┘
-              │
-Layer 2 ─── 05-runtime
-              │
-Layer 3 ─── 06-chromium-driver
-              │
-Layer 4 ─── 07-dashboard
-```
-
-| # | Task | PRD | Layer | Depends On |
-|---|------|-----|-------|------------|
-| 01 | Event System | `../prd/prd-events.md` | 0 | — |
-| 02 | Working Memory | `../prd/prd-memory.md` | 1a | 01 |
-| 03 | Scheduler | `../prd/prd-scheduler.md` | 1b | 01 |
-| 04 | Actions + Driver API | `../prd/prd-driver-api.md` | 1c | 01 |
-| 05 | Runtime Core | `../prd/prd-runtime.md` | 2 | 01–04 |
-| 06 | Chromium Driver | `../prd/prd-browser-driver.md` | 3 | 04 |
-| 07 | Dashboard Server | `../prd/prd-dashboard.md` | 4 | 05 |
+Each subdirectory contains a gap analysis document for one subsystem of the Artax Network runtime. These documents describe the gaps between the current implementation and the original plan (PRDs + task files).
 
 ## How to Use
 
-1. Open the `TASK.md` for the subsystem you want to implement
-2. Copy the entire content as a prompt to a new OpenCode session
-3. The session will read the PRD, reconcile interfaces, implement, and test
-4. Verify quality gates before moving to the next layer
+1. Open the `TASK.md` for the subsystem you want to close gaps in
+2. The document contains: current behaviour, missing behaviour, expected behaviour, and acceptance criteria
+3. Use the document as a standalone prompt for an AI agent or developer to close the gaps
+4. Verify quality gates after closing gaps
 
-## Important
+## Gap Summary
 
-- Each task reconciles existing scaffolding with PRD decisions before implementing
-- The existing `../../artax` stubs have DIFFERENT interfaces than the PRDs — PRDs are source of truth
-- All code must pass `mypy --strict`, `ruff check`, and `pytest`
-- No implementation logic in the runtime for driver-specific concerns
+| # | Subsystem | Layer | Gaps | Severity |
+|---|-----------|-------|------|----------|
+| 01 | Event System | 0 | 1 (double-start protection) | LOW |
+| 02 | Working Memory | 1a | 5 (event-driven updates missing, protocol mismatches) | HIGH |
+| 03 | Scheduler | 1b | 1 (missing cancelled event emission) | HIGH |
+| 04 | Driver API | 1c | 3 (recoverable param, latency_ms type, protocol mismatch) | HIGH |
+| 05 | Runtime Core | 2 | 5 (failure handling, config mismatch, missing CLI flags, metrics) | HIGH |
+| 06 | Chromium Driver | 3 | 4 (debouncing, polling fallback, observer timing, extra actions) | MEDIUM |
+| 07 | Dashboard Server | 4 | 9 (no client messages, no periodic broadcast, no HTTP server, protocol gaps) | HIGH |

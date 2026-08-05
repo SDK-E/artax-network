@@ -15,7 +15,7 @@ import time
 from collections import deque
 from typing import Any
 
-from ..events.types import Event
+from ..events.types import Event, EventType
 from .config import DashboardConfig
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,8 @@ class DashboardServer:
         self._ws_server: Any = None
         self._running = False
         self._started_at: float = 0.0
+        self._connected_drivers: set[str] = set()
+        self._unhealthy_drivers: set[str] = set()
 
     @property
     def host(self) -> str:
@@ -77,6 +79,16 @@ class DashboardServer:
     def client_count(self) -> int:
         """Return the number of connected WebSocket clients."""
         return len(self._clients)
+
+    @property
+    def connected_drivers(self) -> list[str]:
+        """Return the names of currently connected drivers."""
+        return sorted(self._connected_drivers)
+
+    @property
+    def unhealthy_drivers(self) -> list[str]:
+        """Return the names of unhealthy drivers."""
+        return sorted(self._unhealthy_drivers)
 
     @property
     def event_history(self) -> list[dict[str, Any]]:
@@ -152,6 +164,8 @@ class DashboardServer:
         event_dict = self._event_to_dict(event)
         self._event_history.append(event_dict)
 
+        self._track_driver_event(event)
+
         await self._broadcast(event_dict)
 
     def get_event_history(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -179,6 +193,11 @@ class DashboardServer:
             "uptime": (time.monotonic() - self._started_at if self._started_at else 0.0),
             "client_count": self.client_count,
             "event_count": len(self._event_history),
+            "drivers_connected": len(self._connected_drivers),
+            "connected_drivers": self.connected_drivers,
+            "drivers_unhealthy": len(self._unhealthy_drivers),
+            "unhealthy_drivers": self.unhealthy_drivers,
+            "memory_keys": self._count_memory_keys(),
         }
 
     def get_health(self) -> dict[str, Any]:
@@ -193,7 +212,35 @@ class DashboardServer:
             "client_count": self.client_count,
             "event_count": len(self._event_history),
             "running": self._running,
+            "drivers_connected": len(self._connected_drivers),
+            "drivers_unhealthy": len(self._unhealthy_drivers),
         }
+
+    def _track_driver_event(self, event: Event) -> None:
+        """Update the connected-driver set from driver lifecycle events.
+
+        Args:
+            event: A semantic event from the runtime.
+
+        """
+        driver_name = event.payload.get("driver", "unknown")
+        if event.type == EventType.DRIVER_CONNECTED:
+            self._connected_drivers.add(driver_name)
+            self._unhealthy_drivers.discard(driver_name)
+        elif event.type == EventType.DRIVER_DISCONNECTED:
+            self._connected_drivers.discard(driver_name)
+        elif event.type == EventType.DRIVER_UNHEALTHY:
+            self._unhealthy_drivers.add(driver_name)
+
+    def _count_memory_keys(self) -> int:
+        """Count unique memory keys seen across all history events."""
+        keys: set[str] = set()
+        for ev in self._event_history:
+            if ev.get("type") == EventType.MEMORY_UPDATED.value:
+                key = ev.get("payload", {}).get("key")
+                if key is not None:
+                    keys.add(str(key))
+        return len(keys)
 
     async def _handle_client(self, ws: Any) -> None:
         """Handle a single WebSocket client connection."""
@@ -201,8 +248,37 @@ class DashboardServer:
         logger.info("Client connected (%d total)", self.client_count)
 
         try:
-            # Send event history on connect
+            # Capture state and history before any await so they are
+            # consistent — the EventBus consumer may process driver events
+            # during an await, making _connected_drivers and _event_history
+            # diverge between two separate sends.
             history = self.get_event_history(limit=50)
+            drivers_connected = len(self._connected_drivers)
+            connected_drivers = self.connected_drivers
+            memory_keys = self._count_memory_keys()
+
+            # Send current runtime state so the client has an accurate
+            # snapshot of connected drivers even if they were connected
+            # before the client joined.
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "state",
+                        "uptime": (
+                            time.monotonic() - self._started_at if self._started_at else 0.0
+                        ),
+                        "client_count": self.client_count,
+                        "event_count": len(self._event_history),
+                        "drivers_connected": drivers_connected,
+                        "connected_drivers": connected_drivers,
+                        "drivers_unhealthy": len(self._unhealthy_drivers),
+                        "unhealthy_drivers": self.unhealthy_drivers,
+                        "memory_keys": memory_keys,
+                    }
+                )
+            )
+
+            # Send event history on connect
             if history:
                 await ws.send(
                     json.dumps({"type": "history", "events": history}),

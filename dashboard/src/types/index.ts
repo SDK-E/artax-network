@@ -15,6 +15,8 @@ export interface ConnectionState {
 export interface DashboardSnapshot {
   events: ArtaxEvent[];
   driverCount: number;
+  connectedDrivers: string[];
+  unhealthyDrivers: string[];
   memoryKeys: number;
   uptime: number;
 }

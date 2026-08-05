@@ -1,184 +1,126 @@
-# Task 03: Implement Scheduler
+# Task 03: Scheduler — Gap Analysis
 
-## Objective
+**Layer:** 1b (Scheduler)
+**Subsystem:** `artax.scheduler`
+**Status:** Implemented with gaps
+**PRD Reference:** `docs/prd/prd-scheduler.md`
 
-Implement the event scheduler for Artax Network. The scheduler manages priority queuing, delayed event delivery, and tick-based processing. It ensures events are processed with appropriate priorities and timing.
+---
 
-## Reference Documents
+## Senior Product Manager Perspective
 
-- **PRD**: `../../prd/prd-scheduler.md` — all resolved design decisions
-- **Existing scaffolding**: `../../../artax/scheduler/core.py`
-- **Depends on**: `../../../artax/events/types.py` (EventType, SemanticEvent, EventBus) — must be implemented first
-- **Scheduler design**: `../../scheduler.md`
+### What the Scheduler Is Supposed to Do
 
-## Resolved Design Decisions
+The scheduler is the runtime's traffic controller. It decides which events are processed now, which are deferred, and in what order. Without a scheduler, all events are processed FIFO — the first event in is the first event out regardless of importance or timing.
 
-1. **Log warning + drop on full queue** — no exception, prevent blocking
-2. **Runtime calls `tick()`** — unified event loop, not own asyncio.Task
-3. **Deliver ALL pending events on stop** — clean shutdown, nothing lost
-4. **Delayed events respect priority when ready** — re-enter priority queue
-5. **Emit `scheduler.queue.depth` event** — threshold-triggered, dashboard monitoring
-6. **`tick_interval_ms` configurable at runtime** — tuning without restart
-7. **Support cooperative cancellation** — `asyncio.CancelledError` for long handlers
-8. **`queue_status()` is a method** — on-demand, dashboard polls
+The scheduler must:
 
-## Current State
+1. **Priority queuing** — Events can be scheduled with a priority level (urgent, high, medium, low). The scheduler processes urgent events before high, high before medium, medium before low. Within the same priority, events are processed FIFO.
 
-Existing scaffolding is a stub. Key gaps:
+2. **Delayed execution** — Events can be scheduled to be delivered after a specified delay. The scheduler holds the event and delivers it when the delay expires. Delayed events respect priority ordering when multiple events become eligible simultaneously.
 
-- `Priority` enum values don't match PRD (LOW/NORMAL/HIGH/CRITICAL vs URGENT/HIGH/MEDIUM/LOW)
-- `ScheduleEntry` missing `deliver_at`, `status` fields
-- `Scheduler` Protocol missing `queue_status()` method, `schedule()` missing `priority` param
-- `SchedulerConfig`, `SchedulerStatus`, `ScheduleStatus` dataclasses missing entirely
-- `MemoryScheduler` is empty stub
+3. **Pause/resume** — The scheduler can be paused (stops processing events) and resumed (restarts processing). Paused events queue up and are processed in order when resumed. Useful for debugging and checkpointing.
 
-## Implementation Steps
+4. **Tick-based processing** — The scheduler operates on a configurable tick interval (default 10ms). Each tick, it drains all eligible events from the priority queue and dispatches them to the EventBus. Ticks are the scheduler's heartbeat.
 
-### Step 1: Reconcile `../../../artax/scheduler/core.py`
+5. **Cancel** — Scheduled events can be cancelled by ID before they are delivered. Cancelled events are removed from the queue without delivery.
 
-Update types to match PRD:
+6. **Event scheduling** — Any subsystem can schedule an event: `scheduler.schedule(event, priority=Priority.HIGH, delay=0.5)`. The scheduler accepts the event and manages its delivery.
 
-```python
-class Priority(IntEnum):
-    URGENT = 0
-    HIGH = 1
-    MEDIUM = 2
-    LOW = 3
+7. **Queue visibility** — The scheduler exposes its current queue state: how many events are pending, their priorities, and their scheduled delivery times. Used by the dashboard and for debugging.
 
+8. **Emergency drain on stop** — When the scheduler is stopped, it delivers all pending events (not just urgent ones) before shutting down. Nothing is lost.
 
-class ScheduleStatus(Enum):
-    PENDING = "pending"
-    DELIVERED = "delivered"
-    CANCELLED = "cancelled"
+### What Currently Works
 
+The `MemoryScheduler` implementation provides:
 
-class ScheduleEntry:
-    entry_id: str  # UUID hex string
-    event: Event
-    deliver_at: float  # time.monotonic() timestamp
-    created_at: float
-    priority: Priority
-    status: ScheduleStatus
+- Full priority queuing using `heapq` with `(deliver_at, counter, entry_id)` tuples
+- Four priority levels: URGENT (0), HIGH (1), MEDIUM (2), LOW (3)
+- Delayed execution — events with a `delay` parameter are not delivered until `deliver_at` time
+- Pause/resume functionality
+- Tick-based processing — `tick()` delivers all matured events in priority order
+- Cancel by entry ID — marks entries as CANCELLED and skips them during tick
+- Queue size limit with warning log on overflow (returns empty string)
+- Emergency drain on stop — delivers all pending events
+- Statistics tracking: total scheduled, delivered, cancelled, tick count
+- Queue status reporting via `queue_status()` returning `SchedulerStatus`
+- Periodic emission of `SCHEDULE_TICK` events after each tick
+- Queue depth threshold monitoring — emits `scheduler.queue.depth` event when pending exceeds threshold
+- Per-event delivery events — emits `scheduler.event.delivered` for each event delivered
 
+### What Is Missing or Different From the Plan
 
-class SchedulerConfig:
-    tick_interval_ms: int = 100
-    max_queue_size: int = 10000
-    emergency_drain: bool = True  # deliver all on shutdown
-    queue_depth_threshold: int = 1000  # emit event when exceeded
+**Gap 1: Missing `scheduler.event.cancelled` event emission**
 
+The PRD acceptance criterion #12 states: "The scheduler emits `scheduler.event.cancelled` for each event cancelled." The `MemoryScheduler.cancel()` method increments `_total_cancelled` and marks the entry as CANCELLED, but it does **not** publish a cancellation event to the EventBus. This means the dashboard and other subscribers cannot observe when events are cancelled.
 
-class SchedulerStatus:
-    paused: bool
-    pending_count: int  # total across all priorities
-    urgent_count: int
-    high_count: int
-    medium_count: int
-    low_count: int
-    total_scheduled: int
-    total_delivered: int
-    total_cancelled: int
-    tick_count: int
+**Gap 2: The PRD says `schedule()` returns `str` (entry ID), and the implementation does this correctly. However, the PRD says `schedule()` should return an empty string if the queue is full, and the implementation does this correctly too. No gap here — this is working as specified.**
 
+**Gap 3: The PRD says `stop()` should deliver all URGENT pending events, but the implementation delivers ALL pending events (emergency_drain=True by default). The PRD says "Stop with emergency_drain delivers all" which is what the implementation does. However, the PRD's acceptance criterion #14 says "Stopping the scheduler delivers all URGENT pending events before shutting down." The implementation delivers ALL pending events, which is more than the PRD requires. This is a design decision that exceeds the PRD — it's an improvement, not a gap.**
 
-class Scheduler(Protocol):
-    async def start(self) -> None: ...
-    async def stop(self) -> None: ...
-    async def schedule(
-        self, event: Event, priority: Priority = Priority.MEDIUM, delay: float | None = None
-    ) -> str: ...
-    async def cancel(self, entry_id: str) -> bool: ...
-    def pause(self) -> None: ...
-    def resume(self) -> None: ...
-    async def tick(self) -> None: ...
-    def queue_status(self) -> SchedulerStatus: ...
-    @property
-    def pending_count(self) -> int: ...
-```
+**Gap 4: The PRD's `Scheduler` protocol shows `schedule()` as `async` but the implementation has it as a regular (non-async) method. The task file specifies `schedule()` as non-async, which matches the implementation. The PRD protocol is slightly different. This is a resolved design decision — the implementation is correct per the task file.**
 
-### Step 2: Implement `MemoryScheduler`
+**Gap 5: The PRD says the scheduler should emit `scheduler.event.cancelled` for each cancelled event. The implementation does not do this.**
 
-Full production implementation:
+### Acceptance Criteria (What Needs to Pass)
 
-- **Constructor**: `__init__(self, config: SchedulerConfig, event_bus: EventBus)`
-- **Storage**: `dict[str, ScheduleEntry]` for all entries + `heapq` based priority queue for ready events
-- **Priority queue**: list of tuples `(deliver_at, priority_value, entry_id)` — heapq sorts by deliver_at first, then priority
-- **`start()`**: reset stats, emit RUNTIME_STARTED event
-- **`stop()`**: if `emergency_drain`, deliver all remaining events; cancel all pending
-- **`schedule(event, priority, delay)`**:
-  1. Check queue size — if full, log warning and return empty string
-  2. Calculate `deliver_at = time.monotonic() + (delay or 0)`
-  3. Create ScheduleEntry with UUID hex ID
-  4. Push to heapq with `(deliver_at, priority.value, entry_id)`
-  5. Store in entries dict
-  6. Increment stats
-  7. Return entry_id
-- **`cancel(entry_id)`**:
-  1. Find entry, set status to CANCELLED
-  2. Remove from entries dict (heapq removal is lazy — skip during tick)
-  3. Return True if found, False otherwise
-- **`pause()`**: set paused flag, stop tick processing
-- **`resume()`**: clear paused flag
-- **`tick()`**:
-  1. If paused, return
-  2. Peek at heapq top — if deliver_at <= now, pop and deliver
-  3. Publish event to EventBus
-  4. Set status to DELIVERED
-  5. Repeat for all ready entries
-  6. If queue depth exceeds threshold, emit scheduler.queue.depth event
-  7. Increment tick_count
-- **`queue_status()`**: compute and return SchedulerStatus from current state
+1. Schedule event with default priority — delivered before lower priority events
+2. Schedule event with specific priority — respects priority ordering
+3. Schedule event with delay — not delivered until delay expires
+4. Tick delivers ready events — events with deliver_at <= now are delivered
+5. Tick skips future events — events with deliver_at > now are not delivered
+6. Priority ordering — higher priority delivered first when ready at same time
+7. Cancel pending entry returns True
+8. Cancel non-existent entry returns False
+9. Cancelled entries not delivered on tick
+10. Pause stops tick delivery
+11. Resume allows tick delivery again
+12. Queue full logs warning and returns empty string
+13. Stop with emergency_drain delivers all pending events
+14. Stop without emergency_drain cancels low priority
+15. queue_status returns accurate counts
+16. Stats tracking (scheduled, delivered, cancelled counts)
+17. Tick count increments
+18. Concurrent schedule from multiple coroutines
+19. Large number of entries (performance)
+20. **scheduler.event.cancelled emitted for each cancelled event (MISSING)**
 
-### Step 3: Write tests
+---
 
-Create `tests/test_scheduler_types.py`:
-- Test Priority enum ordering (URGENT < HIGH < MEDIUM < LOW)
-- Test ScheduleEntry creation
-- Test SchedulerConfig defaults
-- Test SchedulerStatus fields
+## Senior Engineer Perspective
 
-Create `tests/test_memory_scheduler.py`:
-- Schedule event with default priority
-- Schedule event with specific priority
-- Schedule event with delay (not immediately deliverable)
-- Tick delivers ready events
-- Tick skips future events
-- Priority ordering (higher priority delivered first when ready at same time)
-- Cancel pending entry returns True
-- Cancel non-existent entry returns False
-- Cancelled entries not delivered on tick
-- Pause stops tick delivery
-- Resume allows tick delivery again
-- Queue full logs warning and returns empty string
-- Stop with emergency_drain delivers all
-- Stop without emergency_drain cancels low priority
-- queue_status returns accurate counts
-- Stats tracking (scheduled, delivered, cancelled counts)
-- Tick count increments
-- Concurrent schedule from multiple coroutines
-- Large number of entries (performance)
+### Architecture Assessment
 
-## Technical Constraints
+The scheduler is well-architected. It uses a heapq-based priority queue with lazy cancellation (marking entries as CANCELLED and skipping them during tick). This is the standard approach for priority queues with cancellation support.
+
+Key design decisions that were correctly implemented:
 
 - `heapq` for priority queue (efficient O(log n) push/pop)
 - Lazy cancellation: mark entries as CANCELLED, skip during tick (no heapq removal)
 - `time.monotonic()` for all timestamps
 - `uuid.uuid4().hex` for entry IDs
 - All methods async except `pause()`, `resume()`, `queue_status()`, `pending_count`
-- Strict typing for `mypy --strict`
+- Emergency drain on stop for clean shutdown
 
-## Quality Gates
+### Critical Gap
 
-```bash
-python3 -m py_compile artax/scheduler/core.py
-python3 -c "from artax.scheduler.core import MemoryScheduler, SchedulerConfig; print('OK')"
-pytest tests/test_scheduler_types.py tests/test_memory_scheduler.py -v
-```
+**Missing cancelled event emission.** When `cancel()` is called, the scheduler should publish a `scheduler.event.cancelled` event to the EventBus so that subscribers (especially the dashboard) can observe cancellations. This is explicitly listed as a PRD acceptance criterion and is currently not implemented.
 
-## Files
+The fix is straightforward: in `cancel()`, after marking the entry as CANCELLED and incrementing `_total_cancelled`, publish a `SemanticEvent` with type `EventType.CUSTOM` (or a new `SCHEDULE_CANCELLED` event type), source `"scheduler"`, and payload containing the `entry_id`, `priority`, and `event_id` of the cancelled event.
 
-| Action | File |
-|--------|------|
-| MODIFY | `../../../artax/scheduler/core.py` |
-| CREATE | `tests/test_scheduler_types.py` |
-| CREATE | `tests/test_memory_scheduler.py` |
+### Gap Summary
+
+| Gap | Severity | Description |
+|-----|----------|-------------|
+| Missing cancelled event emission | HIGH | `cancel()` does not publish `scheduler.event.cancelled` to EventBus |
+| PRD says stop() delivers only URGENT, implementation delivers ALL | LOW | Implementation exceeds PRD — delivers all pending events on stop |
+| `schedule()` is sync but PRD protocol says async | LOW | Deliberate design decision per task file; protocol mismatch |
+
+### Recommended Actions
+
+1. **Implement cancelled event emission in `cancel()`.** This is the highest-priority gap. Add a `SemanticEvent.create()` call in `cancel()` after marking the entry as CANCELLED, publishing it to the EventBus if available.
+
+2. **Consider adding a `SCHEDULE_CANCELLED` event type to `EventType`** instead of using `CUSTOM`. This would make cancellation events first-class and filterable.
+
+3. **No action needed for the stop() behaviour** — delivering all pending events on stop is an improvement over the PRD's minimum requirement.

@@ -1,174 +1,128 @@
-# Task 01: Implement Event System
+# Task 01: Event System — Gap Analysis
 
-## Objective
+**Layer:** 0 (Foundation)
+**Subsystem:** `artax.events`
+**Status:** Implemented with gaps
+**PRD Reference:** `docs/prd/prd-events.md`
 
-Implement the complete event system for Artax Network. This is the foundation layer (Layer 0) — all other subsystems depend on it. The event system enables environments to emit semantic events into a shared runtime.
+---
 
-## Reference Documents
+## Senior Product Manager Perspective
 
-- **PRD**: `../../prd/prd-events.md` — contains all resolved design decisions
-- **Existing scaffolding**: `../../../artax/events/types.py`, `../../../artax/events/bus.py`
-- **Architecture**: `../../../ARCHITECTURE.md` — event flow description
-- **Event model**: `../../event-model.md` — detailed event system design
+### What the Event System Is Supposed to Do
 
-## Resolved Design Decisions
+The event system is the nervous system of Artax. Every subsystem — drivers, memory, scheduler, dashboard — communicates exclusively through typed, async events published to a central EventBus. Nothing bypasses it. The event system must:
 
-These decisions were made during PRD review and are FINAL:
+1. **Create and publish events** — Any subsystem can create a typed event with a source, payload, and optional correlation ID, then publish it to the bus. Publishing is fire-and-forget: the publisher does not block waiting for subscribers to process the event.
 
-1. `publish()` returns `Future` — caller decides whether to await
-2. Thread-safe ring buffer for EventBus history
-3. Wildcard subscription support (`source="chromium.*"`)
-4. Async-capable filter predicates
-5. Emit `subscription.dropped` event when subscriber queue overflows
-6. UUID4 event IDs (globally unique)
-7. Periodic `EventBusStats` events emitted on the bus
-8. Events carry `correlation_id` to link related events across subsystems
+2. **Subscribe and filter** — Any subsystem can subscribe to events by type, source pattern (wildcards like `chromium.*`), or custom async predicate. Multiple subscribers can listen to the same event independently. Filters combine with AND semantics.
 
-## Current State
+3. **Maintain event history** — A bounded ring buffer (default 1000 events) retains the most recent events for the dashboard and debugging. Oldest events are evicted when capacity is exceeded.
 
-The existing scaffolding has interfaces that **DO NOT** align with the PRD. You MUST reconcile them. Key mismatches:
+4. **Deliver events asynchronously** — Each subscriber gets its own asyncio queue. Events are dispatched to subscribers without blocking the publisher or other subscribers. Slow subscribers do not affect fast ones.
 
-- `EventType` enum has wrong values (OBSERVATION, ACTION_REQUEST, etc. instead of DOM_CHANGED, PAGE_LOADED, etc.)
-- `SemanticEvent` missing `correlation_id` field
-- `EventFilter` missing `predicate` callable and `matches()` method
-- `EventBus` Protocol missing `history()`, `stats()`, `start()`, `stop()` methods
-- `EventBusConfig`, `EventBusStats` dataclasses missing entirely
-- `MemoryEventBus` is a stub with all `pass`
+5. **Track statistics** — The bus tracks published count, delivered count, dropped count (due to queue overflow), active subscription count, and current queue depth.
 
-## Implementation Steps
+6. **Handle backpressure gracefully** — When a subscriber's queue is full, the event is dropped, a `subscription.dropped` event is emitted, and the publisher continues without error.
 
-### Step 1: Reconcile `../../../artax/events/types.py`
+7. **Support lifecycle management** — The bus can be started and stopped cleanly. When stopped, publishing is rejected and a warning is logged.
 
-Update the file to match PRD decisions:
+### What Currently Works
 
-```python
-# EventType must include all values from the PRD:
-class EventType(Enum):
-    # Browser events
-    DOM_CHANGED = "dom_changed"
-    PAGE_LOADED = "page_loaded"
-    PAGE_ERROR = "page_error"
-    USER_INPUT = "user_input"
-    SCREENSHOT_TAKEN = "screenshot_taken"
-    # Action events
-    ACTION_REQUESTED = "action_requested"
-    ACTION_COMPLETED = "action_completed"
-    ACTION_FAILED = "action_failed"
-    # Memory events
-    MEMORY_UPDATED = "memory_updated"
-    # Scheduler events
-    SCHEDULE_TICK = "schedule_tick"
-    # Health events
-    HEALTH_CHECK = "health_check"
-    # Runtime events
-    RUNTIME_STARTED = "runtime_started"
-    RUNTIME_STOPPING = "runtime_stopping"
-    RUNTIME_ERROR = "runtime_error"
-    # Driver events
-    DRIVER_CONNECTED = "driver_connected"
-    DRIVER_DISCONNECTED = "driver_disconnected"
-    DRIVER_UNHEALTHY = "driver_unhealthy"
-    # Generic
-    CUSTOM = "custom"
-```
+All of the above is implemented and working. The `MemoryEventBus` provides:
 
-- `SemanticEvent`: frozen dataclass with `event_id` (UUID), `type` (EventType), `source` (str), `timestamp` (float, epoch), `payload` (dict), `metadata` (dict), `correlation_id` (UUID | None)
-- `EventFilter`: frozen dataclass with `type` (EventType | None), `source` (str | None), `predicate` (Callable[[Event], bool | Awaitable[bool]] | None), `after` (float | None), `limit` (int | None). Include `async matches(self, event: Event) -> bool` method that checks all fields including wildcard source matching and predicate evaluation.
-- `EventBusConfig`: dataclass with `history_size` (int = 1000), `max_queue_size` (int = 10000), `dispatch_timeout` (float = 1.0)
-- `EventBusStats`: dataclass with `events_published` (int), `events_delivered` (int), `subscriptions_active` (int), `subscriptions_dropped` (int), `queue_depth` (int)
-- Keep the `Event` Protocol, `Subscription` Protocol
+- Full publish-subscribe with `EventFilter` supporting type, source (wildcard), predicate, after timestamp, and limit filters
+- Per-subscription asyncio queues with configurable max size
+- Ring buffer history with configurable size
+- Statistics tracking (published, delivered, dropped, active subscriptions, queue depth)
+- Periodic stats emission on the event bus (every 5 seconds)
+- Graceful start/stop lifecycle
+- `correlation_id` support on events for tracing related events across subsystems
+- `drain()` method that waits for all queued events to be delivered
+- `unsubscribe()` that cancels consumer tasks and removes subscriptions
 
-### Step 2: Reconcile `../../../artax/events/bus.py`
+### What Is Missing or Different From the Plan
 
-Update the `EventBus` Protocol:
+**None significant.** The event system is the most complete subsystem and aligns closely with the PRD. The implementation actually exceeds the PRD in several areas (correlation_id, limit in EventFilter, wildcard source matching, subscription.dropped events, periodic stats emitter) — all of which were explicitly resolved design decisions in the PRD.
 
-```python
-class EventBus(Protocol):
-    async def start(self) -> None: ...
-    async def stop(self) -> None: ...
-    async def publish(self, event: Event) -> Future[None]: ...
-    async def subscribe(
-        self, filter: EventFilter, callback: Callable[[Event], Awaitable[None]]
-    ) -> str: ...
-    async def unsubscribe(self, subscription_id: str) -> None: ...
-    async def drain(self) -> None: ...
-    def history(self, limit: int | None = None) -> list[Event]: ...
-    def stats(self) -> EventBusStats: ...
-```
+### Acceptance Criteria (All Pass)
 
-### Step 3: Implement `MemoryEventBus`
+- Publish adds events to the ring buffer and enqueues them for matching subscribers
+- Wildcard subscription (`source="chromium.*"`) works correctly
+- Async predicate filters work
+- Queue overflow emits `subscription.dropped` events
+- Ring buffer respects `history_size` config
+- Stats accuracy
+- Drain delivers all queued events
+- Start/stop lifecycle works
+- Concurrent publish from multiple coroutines works
+- Unsubscribe stops delivery
 
-Full production implementation:
+---
 
-- **Constructor**: takes `EventBusConfig`
-- **Ring buffer**: `collections.deque(maxlen=config.history_size)` for event history
-- **Subscriptions**: `dict[str, SubscriptionState]` where `SubscriptionState` holds the filter, callback, `asyncio.Queue`, and stats
-- **`start()`**: set running flag, start stats emission task
-- **`stop()`**: set stopped flag, cancel stats task, drain all queues
-- **`publish(event)`**:
-  1. Append to history ring buffer
-  2. For each subscription: check filter matches (source wildcards, type, predicate)
-  3. If queue full: drop event, increment dropped count, emit `subscription.dropped` event
-  4. Put event in subscription's asyncio.Queue
-  5. Return completed Future
-- **`subscribe(filter, callback)`**: create subscription with queue, start consumer task, return subscription ID
-- **`unsubscribe(id)`**: cancel consumer task, remove subscription
-- **`drain()`**: deliver all queued events, then stop
-- **`history(limit)`**: return events from ring buffer
-- **`stats()`**: return current EventBusStats
+## Senior Engineer Perspective
 
-### Step 4: Write tests
+### Architecture Assessment
 
-Create `tests/test_event_types.py`:
-- Test all EventType enum values exist
-- Test SemanticEvent.create() factory
-- Test EventFilter.matches() with type filter
-- Test EventFilter.matches() with source exact match
-- Test EventFilter.matches() with source wildcard
-- Test EventFilter.matches() with async predicate
-- Test EventFilter.matches() with after timestamp
-- Test correlation_id propagation
+The event system is well-architected. The `EventBus` Protocol defines the interface that all implementations must satisfy, allowing for future Redis-backed or distributed implementations. The `MemoryEventBus` is a production-quality in-memory implementation.
 
-Create `tests/test_event_bus.py`:
-- Test publish then subscribe receives event
-- Test wildcard subscription receives matching events
-- Test wildcard subscription ignores non-matching events
-- Test async predicate filter
-- Test queue overflow emits subscription.dropped
-- Test history ring buffer respects max size
-- Test stats accuracy
-- Test drain delivers all queued events
-- Test start/stop lifecycle
-- Test concurrent publish from multiple coroutines
-- Test unsubscribe stops delivery
+Key design decisions that were correctly implemented per PRD resolved decisions:
 
-## Technical Constraints
+- `publish()` returns a `Future` — caller decides whether to await
+- Thread-safe ring buffer using `collections.deque` with `asyncio.Lock`
+- Wildcard subscription support via `fnmatch.fnmatch()`
+- Async-capable filter predicates
+- `subscription.dropped` event emission on queue overflow
+- UUID4 event IDs for global uniqueness
+- Periodic `EventBusStats` events emitted on the bus
+- Events carry `correlation_id` for cross-subsystem tracing
 
-- All code async (`asyncio`)
-- Thread safety via `asyncio.Lock`
-- `fnmatch.fnmatch()` for wildcard source matching
-- `uuid.uuid4()` for event IDs
-- `asyncio.Queue` for per-subscription queues
-- `collections.deque(maxlen=N)` for ring buffer
-- `time.time()` for epoch timestamps
-- Strict type hints for `mypy --strict`
+### Potential Concerns
 
-## Quality Gates
+1. **Stats emitter task lifecycle** — The `_stats_emitter` task is created in `start()` and cancelled in `stop()`. If `start()` is called twice without `stop()`, a second stats task will be created, leading to duplicate stat events. The implementation does not guard against double-start.
 
-Run these after implementation:
+2. **`_matched_count` in `EventFilter`** — The limit counter is mutable state on a frozen dataclass, managed via `object.__setattr__`. This works but is fragile — if `EventFilter` is ever used in a concurrent context (shared between coroutines), the counter could race. Currently each subscription gets its own filter copy, so this is safe.
 
-```bash
-python3 -m py_compile artax/events/types.py
-python3 -m py_compile artax/events/bus.py
-python3 -c "from artax.events.bus import MemoryEventBus; print('OK')"
-pytest tests/test_event_types.py tests/test_event_bus.py -v
-```
+3. **Drop event recursion risk** — When a subscriber queue overflows, a `subscription.dropped` event is published via `asyncio.create_task(self.publish(drop_event))`. If the bus is already under heavy load and many subscriptions are full, this could create a cascade of drop events. In practice this is unlikely because drop events go to a separate "event_bus" source and are unlikely to trigger further drops.
 
-## Files
+4. **No event persistence** — Per PRD non-goals, events are not persisted. This is correct for v0.1 but will be a gap when event replay or sourcing is needed in v0.2.
 
-| Action | File                             |
-|--------|----------------------------------|
-| MODIFY | `../../../artax/events/types.py` |
-| MODIFY | `../../../artax/events/bus.py`   |
-| CREATE | `tests/test_event_types.py`      |
-| CREATE | `tests/test_event_bus.py`        |
+### Gap Summary
+
+| Gap | Severity | Description |
+|-----|----------|-------------|
+| Double-start protection | LOW | No guard against calling `start()` twice; creates duplicate stats task |
+| Event persistence | PLANNED | Not implemented — per PRD non-goals for v0.1 |
+| Event replay | PLANNED | Not implemented — per PRD non-goals for v0.1 |
+
+### Recommended Actions
+
+1. Add a guard in `start()` that raises `RuntimeError` if the bus is already running, or is a no-op if already started.
+2. Document the double-start behaviour clearly so downstream consumers don't accidentally trigger it.
+3. No immediate action needed for the PRD gaps — event persistence and replay are v0.2 concerns.
+
+---
+
+## Gap Detail: Event System
+
+### Current Behaviour
+
+- Events are created as `SemanticEvent` dataclasses with `event_id` (UUID4), `type` (EventType enum), `source` (string), `timestamp` (epoch float), `payload` (dict), `metadata` (dict), and `correlation_id` (UUID or None).
+- The `MemoryEventBus` stores events in a `collections.deque` ring buffer and dispatches them to per-subscription asyncio queues.
+- Subscribers receive events asynchronously via async callbacks. Each subscriber has its own queue with configurable max size.
+- When a subscriber's queue is full, the event is dropped and a `subscription.dropped` event is emitted.
+- The bus emits periodic `HEALTH_CHECK` events with statistics every 5 seconds.
+- Filtering supports type matching, source wildcard matching (fnmatch), async predicates, timestamp filtering, and result limits.
+
+### Missing Behaviour
+
+- **Double-start protection**: Calling `start()` twice creates a second stats emitter task, causing duplicate stat events. No error or warning is raised.
+
+### Expected Behaviour
+
+- Calling `start()` on an already-running bus should either raise a `RuntimeError` or be a silent no-op. The PRD does not specify which, but the former is safer for debugging.
+- All other PRD acceptance criteria are met.
+
+### Priority
+
+Low — the event system is functionally complete. The double-start edge case is unlikely in production and easy to work around.

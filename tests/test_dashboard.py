@@ -131,6 +131,7 @@ class TestDashboardServerLifecycle:
         server = DashboardServer(config=config)
 
         mock_ws_server = AsyncMock()
+        mock_ws_server.close = MagicMock()
         server._ws_server = mock_ws_server
         server._running = True
 
@@ -252,10 +253,11 @@ class TestDashboardClientHandling:
         mock_ws.__aiter__ = MagicMock(return_value=_EmptyAsyncIterator())
         await server._handle_client(mock_ws)
 
-        mock_ws.send.assert_called()
-        sent_data = json.loads(mock_ws.send.call_args_list[0][0][0])
-        assert sent_data["type"] == "history"
-        assert len(sent_data["events"]) == 1
+        # First message is "state", second is "history"
+        assert mock_ws.send.await_count == 2
+        history_data = json.loads(mock_ws.send.call_args_list[1][0][0])
+        assert history_data["type"] == "history"
+        assert len(history_data["events"]) == 1
 
     async def test_disconnect_removes_client(self) -> None:
         config = DashboardConfig()
@@ -321,6 +323,7 @@ class TestDashboardWebSocketIntegration:
         server = DashboardServer(config=config)
 
         mock_ws_server = AsyncMock()
+        mock_ws_server.close = MagicMock()
         server._ws_server = mock_ws_server
         server._running = True
 
@@ -390,10 +393,15 @@ class TestDashboardErrorPaths:
         mock_ws.__aiter__ = MagicMock(return_value=_EmptyAsyncIterator())
         await server._handle_client(mock_ws)
 
-        mock_ws.send.assert_awaited()
-        sent_data = json.loads(mock_ws.send.call_args[0][0])
-        assert sent_data["type"] == "history"
-        assert len(sent_data["events"]) == 1
+        assert mock_ws.send.await_count == 2
+        # First message: state snapshot; Second message: history
+        state_data = json.loads(mock_ws.send.call_args_list[0][0][0])
+        assert state_data["type"] == "state"
+        assert state_data["drivers_connected"] == 0
+
+        history_data = json.loads(mock_ws.send.call_args_list[1][0][0])
+        assert history_data["type"] == "history"
+        assert len(history_data["events"]) == 1
 
     async def test_handle_client_handles_disconnect_gracefully(self) -> None:
         """Handle client handles disconnect without error."""
@@ -405,3 +413,187 @@ class TestDashboardErrorPaths:
 
         await server._handle_client(mock_ws)
         assert server.client_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Driver Tracking
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardDriverTracking:
+    """Verify the dashboard server tracks connected drivers from events."""
+
+    async def test_tracks_driver_connected(self) -> None:
+        """DRIVER_CONNECTED events add the driver to the tracked set."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        event = SemanticEvent.create(
+            type=EventType.DRIVER_CONNECTED,
+            source="runtime",
+            payload={"driver": "chromium"},
+        )
+        await server.receive_event(event)
+
+        assert server.connected_drivers == ["chromium"]
+
+    async def test_tracks_driver_disconnected(self) -> None:
+        """DRIVER_DISCONNECTED events remove the driver from the tracked set."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_CONNECTED,
+                source="runtime",
+                payload={"driver": "chromium"},
+            )
+        )
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_DISCONNECTED,
+                source="runtime",
+                payload={"driver": "chromium"},
+            )
+        )
+
+        assert server.connected_drivers == []
+
+    async def test_handles_unknown_driver_name(self) -> None:
+        """Driver events without a 'driver' payload key default to 'unknown'."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_CONNECTED,
+                source="runtime",
+                payload={},
+            )
+        )
+
+        assert server.connected_drivers == ["unknown"]
+
+    async def test_state_message_includes_driver_count(self) -> None:
+        """_handle_client sends a 'state' message with driver count."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_CONNECTED,
+                source="runtime",
+                payload={"driver": "chromium"},
+            )
+        )
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = MagicMock(return_value=_EmptyAsyncIterator())
+        await server._handle_client(mock_ws)
+
+        assert mock_ws.send.await_count == 2
+        state_data = json.loads(mock_ws.send.call_args_list[0][0][0])
+        assert state_data["type"] == "state"
+        assert state_data["drivers_connected"] == 1
+        assert state_data["connected_drivers"] == ["chromium"]
+
+    async def test_runtime_state_includes_drivers(self) -> None:
+        """get_runtime_state returns driver count and names."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_CONNECTED,
+                source="runtime",
+                payload={"driver": "chromium"},
+            )
+        )
+
+        state = await server.get_runtime_state()
+        assert state["drivers_connected"] == 1
+        assert state["connected_drivers"] == ["chromium"]
+
+    async def test_health_includes_driver_count(self) -> None:
+        """get_health returns the connected driver count."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_CONNECTED,
+                source="runtime",
+                payload={"driver": "terminal"},
+            )
+        )
+
+        health = server.get_health()
+        assert health["drivers_connected"] == 1
+
+    async def test_memory_keys_counted_from_history(self) -> None:
+        """_count_memory_keys counts unique keys from memory_updated events."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.MEMORY_UPDATED,
+                source="runtime",
+                payload={"key": "foo", "value": 1},
+            )
+        )
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.MEMORY_UPDATED,
+                source="runtime",
+                payload={"key": "foo", "value": 2},
+            )
+        )
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.MEMORY_UPDATED,
+                source="runtime",
+                payload={"key": "bar", "value": "baz"},
+            )
+        )
+
+        assert server._count_memory_keys() == 2
+
+    async def test_tracks_driver_unhealthy(self) -> None:
+        """DRIVER_UNHEALTHY events track the driver as unhealthy."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_UNHEALTHY,
+                source="runtime",
+                payload={"driver": "chromium"},
+            )
+        )
+
+        assert server.unhealthy_drivers == ["chromium"]
+        assert server.connected_drivers == []
+
+    async def test_driver_recovers_from_unhealthy(self) -> None:
+        """DRIVER_CONNECTED removes a driver from the unhealthy set."""
+        config = DashboardConfig()
+        server = DashboardServer(config=config)
+
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_UNHEALTHY,
+                source="runtime",
+                payload={"driver": "chromium"},
+            )
+        )
+        await server.receive_event(
+            SemanticEvent.create(
+                type=EventType.DRIVER_CONNECTED,
+                source="runtime",
+                payload={"driver": "chromium"},
+            )
+        )
+
+        assert server.connected_drivers == ["chromium"]
+        assert server.unhealthy_drivers == []
