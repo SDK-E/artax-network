@@ -67,6 +67,28 @@ class TestLifecycle:
         await bus.stop()
         assert bus._stats_task is None
 
+    async def test_double_start_raises(self, bus: MemoryEventBus) -> None:
+        await bus.start()
+        with pytest.raises(RuntimeError, match="already running"):
+            await bus.start()
+        await bus.stop()
+
+    async def test_triple_start_raises(self, bus: MemoryEventBus) -> None:
+        await bus.start()
+        with pytest.raises(RuntimeError, match="already running"):
+            await bus.start()
+        with pytest.raises(RuntimeError, match="already running"):
+            await bus.start()
+        await bus.stop()
+
+    async def test_start_after_stop_restarts(self, bus: MemoryEventBus) -> None:
+        await bus.start()
+        await bus.stop()
+        await bus.start()
+        assert bus._running is True
+        assert bus._stats_task is not None
+        await bus.stop()
+
 
 class TestPublishSubscribe:
     async def test_publish_then_subscribe_receives(self, bus: MemoryEventBus) -> None:

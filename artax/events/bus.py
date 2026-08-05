@@ -157,6 +157,8 @@ class MemoryEventBus:
 
     async def start(self) -> None:
         """Begin accepting publishes and dispatching events."""
+        if self._running:
+            raise RuntimeError("EventBus is already running; call stop() before start()")
         self._running = True
         self._stopped = False
         self._started = True
